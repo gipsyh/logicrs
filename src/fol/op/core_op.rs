@@ -231,6 +231,7 @@ fn eq_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
 }
 
 define_core_op!(Ult, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify);
+define_core_op!(Usubo, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify);
 fn ult_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
     let y = &terms[1];
@@ -563,6 +564,51 @@ fn add_bitblast(terms: &[TermVec]) -> TermVec {
     }
     res
 }
+define_core_op!(Sub, 2, bitblast: sub_bitblast);
+fn sub_bitblast(terms: &[TermVec]) -> TermVec {
+    let mut r;
+    let mut c = Term::bool_const(true);
+    let mut res = TermVec::new();
+    for (x, y) in terms[0].iter().zip(terms[1].iter()) {
+        (r, c) = full_adder(x, &!y, &c);
+        res.push(r);
+    }
+    res
+}
+
+define_core_op!(Uaddo, 2, sort: bool_sort, bitblast: uaddo_bitblast);
+fn uaddo_bitblast(terms: &[TermVec]) -> TermVec {
+    let mut x = terms[0].clone(); let mut y = terms[1].clone();
+    x.push(Term::bool_const(false));
+    y.push(Term::bool_const(false));
+    x = add_bitblast(&[x, y]);
+    [x[x.len()-1].clone()].into()
+}
+define_core_op!(Saddo, 2, sort: bool_sort, bitblast: saddo_bitblast);
+fn saddo_bitblast(terms: &[TermVec]) -> TermVec {
+    assert_eq!(terms.len(), 2);
+    let w  = terms[0].len();
+    let sx = &terms[0][w - 1]; // sign bits
+    let sy = &terms[1][w - 1];
+    let sum = add_bitblast(terms);
+    let ss  = &sum[w - 1];
+    let v1 = sx & sy & !ss;
+    let v2 = !sx & !sy & ss;
+    TermVec::from([v1 | v2])
+}
+define_core_op!(Ssubo, 2, sort: bool_sort, bitblast: ssubo_bitblast);
+fn ssubo_bitblast(terms: &[TermVec]) -> TermVec {
+    assert_eq!(terms.len(), 2);
+    let w  = terms[0].len();
+    let sx = &terms[0][w - 1];
+    let sy = &terms[1][w - 1];
+    // compute w-bit (x - y) discarding carry_out
+    let diff = sub_bitblast(terms);
+    let sr   = &diff[w - 1];
+    let v1 = sx & !sy & !sr;
+    let v2 = !sx &  sy &  sr;
+    TermVec::from([v1 | v2])
+}
 
 define_core_op!(Mul, 2, bitblast: mul_bitblast);
 fn mul_bitblast(terms: &[TermVec]) -> TermVec {
@@ -628,6 +674,81 @@ define_core_op!(Urem, 2, bitblast: urem_bitblast);
 fn urem_bitblast(terms: &[TermVec]) -> TermVec {
     let (_, r) = udiv_urem_bitblast(&terms[0], &terms[1]);
     r
+}
+
+define_core_op!(Neg, 1, bitblast: neg_bitblast);
+fn neg_bitblast(terms: &[TermVec]) -> TermVec {
+    let x = &terms[0];
+    let mut res = TermVec::new();
+    res.push(x[0].clone());
+    let mut c = !&x[0];
+    for i in 1..x.len() {
+        res.push((&c & &x[i]) | (!&c & !&x[i]));
+        c = &c & !&x[i];
+    }
+    res
+}
+
+define_core_op!(Sdiv, 2, bitblast: sdiv_bitblast);
+fn sdiv_bitblast(terms: &[TermVec]) -> TermVec {
+    let (x, y) = (&terms[0], &terms[1]);
+    let w = x.len();
+    if w == 1 {
+        return TermVec::from([!(!&x[0] & &y[0])])
+        // TermVec::from([&x[0] | !&y[0]])
+    }
+    let (sgnx, sgny) = (x.last().unwrap(), y.last().unwrap());
+    let xor = sgnx ^ sgny;
+    let negx = neg_bitblast(terms);
+    let negy = neg_bitblast(&terms[1..]);
+    let cndx = negx.iter().zip(x.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p])).collect();
+    let cndy = negy.iter().zip(y.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p])).collect();
+    let udiv = udiv_bitblast(&[cndx, cndy]);
+    let neg_udiv = neg_bitblast(&[udiv.clone()]);
+    neg_udiv.iter().zip(udiv.iter())
+        .map(|(n, p)| Term::new_op(Ite, [&xor, n, p])).collect()
+}
+
+define_core_op!(Srem, 2, bitblast: srem_bitblast);
+fn srem_bitblast(terms: &[TermVec]) -> TermVec {
+    let (x, y) = (&terms[0], &terms[1]);
+    let w = x.len();
+    if w == 1 {
+        return TermVec::from([&x[0] & !&y[0]])
+    }
+    let (sgnx, sgny) = (x.last().unwrap(), y.last().unwrap());
+    let negx = neg_bitblast(terms);
+    let negy = neg_bitblast(&terms[1..]);
+    let cndx = negx.iter().zip(x.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p])).collect();
+    let cndy = negy.iter().zip(y.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p])).collect();
+    let urem = urem_bitblast(&[cndx, cndy]);
+    let neg_urem = neg_bitblast(&[urem.clone()]);
+    neg_urem.iter().zip(urem.iter())
+        .map(|(n, p)| Term::new_op(Ite, [&sgnx, n, p])).collect()
+}
+
+// fn umulo_bitblast(terms: &[TermVec]) -> TermVec {
+//     let k = terms[0].len();
+//     if k == 1 { return TermVec::from([Term::bool_const(false)]); }
+//     let mut 
+//     for i in 0..w {
+//         let no_ofl = Term::new_op_fold(Or, terms)
+//     }
+// }
+
+define_core_op!(Sdivo, 2, sort: bool_sort, bitblast: sdivo_bitblast);
+fn sdivo_bitblast(terms: &[TermVec]) -> TermVec {
+    let div_by0 = Term::new_op_fold(And, terms[1].iter().map(|t| !t));
+    let w = terms[0].len();
+    assert!(w == terms[1].len());
+    let mneg_div_neg1 = Term::new_op_fold(And, &terms[1]) // -1
+        & Term::new_op_fold(And, terms[0][0..w-1].iter().map(|t| !t))
+        & &terms[0][w - 1]; // INT_MIN
+    TermVec::from([div_by0 | mneg_div_neg1])
 }
 
 define_core_op!(Read, 2, sort: read_sort, bitblast: read_bitblast);
