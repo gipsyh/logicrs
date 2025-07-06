@@ -286,7 +286,7 @@ fn sll_bitblast(terms: &[TermVec]) -> TermVec {
     }
     let width = x.len();
     // ceil(log2(width))
-    let stages  = (usize::BITS - (width - 1).leading_zeros()) as usize;
+    let stages = (usize::BITS - (width - 1).leading_zeros()) as usize;
     let mut res = x.clone();
     for shift_bit in 0..stages {
         let shift_step = 1 << shift_bit;
@@ -303,7 +303,10 @@ fn sll_bitblast(terms: &[TermVec]) -> TermVec {
 
     if stages < width {
         let no_toobig = !Term::new_op_fold(Or, &y[stages..]);
-        res = res.into_iter().map(|b| Term::new_op(And, [&no_toobig, &b])).collect();
+        res = res
+            .into_iter()
+            .map(|b| Term::new_op(And, [&no_toobig, &b]))
+            .collect();
     }
     res
 }
@@ -316,7 +319,7 @@ fn srl_bitblast(terms: &[TermVec]) -> TermVec {
         return TermVec::from([&x[0] & !&y[0]]);
     }
     let width = x.len();
-    let stages  = (usize::BITS - (width - 1).leading_zeros()) as usize;
+    let stages = (usize::BITS - (width - 1).leading_zeros()) as usize;
     let mut res = x.clone();
     for shift_bit in 0..stages {
         let shift_step = 1 << shift_bit;
@@ -334,8 +337,10 @@ fn srl_bitblast(terms: &[TermVec]) -> TermVec {
 
     if stages < width {
         let not_toobig = !Term::new_op_fold(Or, &y[stages..]);
-        res = res.into_iter()
-            .map(|b| Term::new_op(And, [&not_toobig, &b])).collect();
+        res = res
+            .into_iter()
+            .map(|b| Term::new_op(And, [&not_toobig, &b]))
+            .collect();
     }
     res
 }
@@ -348,7 +353,7 @@ fn sra_bitblast(terms: &[TermVec]) -> TermVec {
         return x.clone();
     }
     let width = x.len();
-    let stages  = (usize::BITS - (width - 1).leading_zeros()) as usize;
+    let stages = (usize::BITS - (width - 1).leading_zeros()) as usize;
     let mut res = x.clone();
     for shift_bit in 0..stages {
         let shift_step = 1 << shift_bit;
@@ -367,8 +372,10 @@ fn sra_bitblast(terms: &[TermVec]) -> TermVec {
     if stages < width {
         let not_toobig = !Term::new_op_fold(Or, &y[stages..]);
         let sign = res[width - 1].clone();
-        res = res.into_iter()
-            .map(|b| Term::new_op(Ite, [&not_toobig, &b, &sign])).collect();
+        res = res
+            .into_iter()
+            .map(|b| Term::new_op(Ite, [&not_toobig, &b, &sign]))
+            .collect();
     }
     res
 }
@@ -382,17 +389,18 @@ fn rol_bitblast(terms: &[TermVec]) -> TermVec {
     if width == 1 {
         return x.clone();
     }
-    let stages = match width & (width - 1) { // power of 2 ?
+    let stages = match width & (width - 1) {
+        // power of 2 ?
         0 => (usize::BITS - (width - 1).leading_zeros()) as usize,
-        _ => width
+        _ => width,
     };
     assert!(stages < usize::BITS as usize);
 
     let mut res = x.clone();
     for shift_bit in 0..stages {
         let shift_step = 1 << shift_bit;
-        let shift      = &y[shift_bit];
-        let mut next   = TermVec::new();
+        let shift = &y[shift_bit];
+        let mut next = TermVec::new();
         for j in 0..width {
             // wrap-around index for rotate-left
             let src = (j + width - shift_step % width) % width;
@@ -415,17 +423,18 @@ fn ror_bitblast(terms: &[TermVec]) -> TermVec {
     if width == 1 {
         return x.clone();
     }
-    let stages = match width & (width - 1) { // power of 2 ?
+    let stages = match width & (width - 1) {
+        // power of 2 ?
         0 => (usize::BITS - (width - 1).leading_zeros()) as usize,
-        _ => width
+        _ => width,
     };
     assert!(stages < usize::BITS as usize);
 
     let mut res = x.clone();
     for shift_bit in 0..stages {
         let shift_step = 1 << shift_bit;
-        let shift      = &y[shift_bit];
-        let mut next   = TermVec::new();
+        let shift = &y[shift_bit];
+        let mut next = TermVec::new();
         for j in 0..width {
             let src = (j + shift_step) % width;
             if src == j {
@@ -578,20 +587,21 @@ fn sub_bitblast(terms: &[TermVec]) -> TermVec {
 
 define_core_op!(Uaddo, 2, sort: bool_sort, bitblast: uaddo_bitblast);
 fn uaddo_bitblast(terms: &[TermVec]) -> TermVec {
-    let mut x = terms[0].clone(); let mut y = terms[1].clone();
+    let mut x = terms[0].clone();
+    let mut y = terms[1].clone();
     x.push(Term::bool_const(false));
     y.push(Term::bool_const(false));
     x = add_bitblast(&[x, y]);
-    [x[x.len()-1].clone()].into()
+    [x[x.len() - 1].clone()].into()
 }
 define_core_op!(Saddo, 2, sort: bool_sort, bitblast: saddo_bitblast);
 fn saddo_bitblast(terms: &[TermVec]) -> TermVec {
     assert_eq!(terms.len(), 2);
-    let w  = terms[0].len();
+    let w = terms[0].len();
     let sx = &terms[0][w - 1]; // sign bits
     let sy = &terms[1][w - 1];
     let sum = add_bitblast(terms);
-    let ss  = &sum[w - 1];
+    let ss = &sum[w - 1];
     let v1 = sx & sy & !ss;
     let v2 = !sx & !sy & ss;
     TermVec::from([v1 | v2])
@@ -599,14 +609,14 @@ fn saddo_bitblast(terms: &[TermVec]) -> TermVec {
 define_core_op!(Ssubo, 2, sort: bool_sort, bitblast: ssubo_bitblast);
 fn ssubo_bitblast(terms: &[TermVec]) -> TermVec {
     assert_eq!(terms.len(), 2);
-    let w  = terms[0].len();
+    let w = terms[0].len();
     let sx = &terms[0][w - 1];
     let sy = &terms[1][w - 1];
     // compute w-bit (x - y) discarding carry_out
     let diff = sub_bitblast(terms);
-    let sr   = &diff[w - 1];
+    let sr = &diff[w - 1];
     let v1 = sx & !sy & !sr;
-    let v2 = !sx &  sy &  sr;
+    let v2 = !sx & sy & sr;
     TermVec::from([v1 | v2])
 }
 
@@ -646,19 +656,19 @@ fn scgate_s(r: &Term, d: &Term, ci: &Term, q: &Term) -> Term {
 fn udiv_urem_bitblast(a: &TermVec, din: &TermVec) -> (TermVec, TermVec) {
     let nd: Vec<Term> = din.iter().map(|t| !t).collect();
     let size = a.len();
-    let mut s = vec![vec![Term::bool_const(false); size+1]; size+1];
-    let mut c = vec![vec![Term::bool_const(false); size+1]; size+1];
+    let mut s = vec![vec![Term::bool_const(false); size + 1]; size + 1];
+    let mut c = vec![vec![Term::bool_const(false); size + 1]; size + 1];
     let mut q = TermVec::new();
 
     for j in 0..size {
         c[j][0] = Term::bool_const(true);
         s[j][0] = a[size - j - 1].clone();
         for i in 0..size {
-            c[j][i+1] = scgate_co(&s[j][i], &nd[i], &c[j][i]);
+            c[j][i + 1] = scgate_co(&s[j][i], &nd[i], &c[j][i]);
         }
         q.push(&c[j][size] | &s[j][size]);
         for i in 0..size {
-            s[j+1][i+1] = scgate_s(&s[j][i], &nd[i], &c[j][i], &q[j]);
+            s[j + 1][i + 1] = scgate_s(&s[j][i], &nd[i], &c[j][i], &q[j]);
         }
     }
     q.reverse(); // quotients come MSB first
@@ -694,21 +704,30 @@ fn sdiv_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     let w = x.len();
     if w == 1 {
-        return TermVec::from([!(!&x[0] & &y[0])])
+        return TermVec::from([!(!&x[0] & &y[0])]);
         // TermVec::from([&x[0] | !&y[0]])
     }
     let (sgnx, sgny) = (x.last().unwrap(), y.last().unwrap());
     let xor = sgnx ^ sgny;
     let negx = neg_bitblast(terms);
     let negy = neg_bitblast(&terms[1..]);
-    let cndx = negx.iter().zip(x.iter())
-        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p])).collect();
-    let cndy = negy.iter().zip(y.iter())
-        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p])).collect();
+    let cndx = negx
+        .iter()
+        .zip(x.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p]))
+        .collect();
+    let cndy = negy
+        .iter()
+        .zip(y.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p]))
+        .collect();
     let udiv = udiv_bitblast(&[cndx, cndy]);
     let neg_udiv = neg_bitblast(&[udiv.clone()]);
-    neg_udiv.iter().zip(udiv.iter())
-        .map(|(n, p)| Term::new_op(Ite, [&xor, n, p])).collect()
+    neg_udiv
+        .iter()
+        .zip(udiv.iter())
+        .map(|(n, p)| Term::new_op(Ite, [&xor, n, p]))
+        .collect()
 }
 
 define_core_op!(Srem, 2, bitblast: srem_bitblast);
@@ -716,25 +735,34 @@ fn srem_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     let w = x.len();
     if w == 1 {
-        return TermVec::from([&x[0] & !&y[0]])
+        return TermVec::from([&x[0] & !&y[0]]);
     }
     let (sgnx, sgny) = (x.last().unwrap(), y.last().unwrap());
     let negx = neg_bitblast(terms);
     let negy = neg_bitblast(&terms[1..]);
-    let cndx = negx.iter().zip(x.iter())
-        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p])).collect();
-    let cndy = negy.iter().zip(y.iter())
-        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p])).collect();
+    let cndx = negx
+        .iter()
+        .zip(x.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p]))
+        .collect();
+    let cndy = negy
+        .iter()
+        .zip(y.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p]))
+        .collect();
     let urem = urem_bitblast(&[cndx, cndy]);
     let neg_urem = neg_bitblast(&[urem.clone()]);
-    neg_urem.iter().zip(urem.iter())
-        .map(|(n, p)| Term::new_op(Ite, [&sgnx, n, p])).collect()
+    neg_urem
+        .iter()
+        .zip(urem.iter())
+        .map(|(n, p)| Term::new_op(Ite, [&sgnx, n, p]))
+        .collect()
 }
 
 // fn umulo_bitblast(terms: &[TermVec]) -> TermVec {
 //     let k = terms[0].len();
 //     if k == 1 { return TermVec::from([Term::bool_const(false)]); }
-//     let mut 
+//     let mut
 //     for i in 0..w {
 //         let no_ofl = Term::new_op_fold(Or, terms)
 //     }

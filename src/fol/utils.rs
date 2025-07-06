@@ -1,7 +1,7 @@
 use super::{Term, op::DynOp};
 use std::ops::{ControlFlow, FromResidual, Try};
 use std::{
-    ops::{Deref, DerefMut, Index, IndexMut, Range, RangeInclusive, RangeTo, RangeFrom},
+    ops::{Deref, DerefMut, Index, IndexMut, Range, RangeFrom, RangeInclusive, RangeTo},
     slice, vec,
 };
 
