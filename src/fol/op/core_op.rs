@@ -676,6 +676,61 @@ fn urem_bitblast(terms: &[TermVec]) -> TermVec {
     r
 }
 
+define_core_op!(Neg, 1, bitblast: neg_bitblast);
+fn neg_bitblast(terms: &[TermVec]) -> TermVec {
+    let x = &terms[0];
+    let mut res = TermVec::new();
+    res.push(x[0].clone());
+    let mut c = !&x[0];
+    for i in 1..x.len() {
+        res.push((&c & &x[i]) | (!&c & !&x[i]));
+        c = &c & !&x[i];
+    }
+    res
+}
+
+define_core_op!(Sdiv, 2, bitblast: sdiv_bitblast);
+fn sdiv_bitblast(terms: &[TermVec]) -> TermVec {
+    let (x, y) = (&terms[0], &terms[1]);
+    let w = x.len();
+    if w == 1 {
+        return TermVec::from([!(!&x[0] & &y[0])])
+        // TermVec::from([&x[0] | !&y[0]])
+    }
+    let (sgnx, sgny) = (x.last().unwrap(), y.last().unwrap());
+    let xor = sgnx ^ sgny;
+    let negx = neg_bitblast(terms);
+    let negy = neg_bitblast(&terms[1..]);
+    let cndx = negx.iter().zip(x.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p])).collect();
+    let cndy = negy.iter().zip(y.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p])).collect();
+    let udiv = udiv_bitblast(&[cndx, cndy]);
+    let neg_udiv = neg_bitblast(&[udiv.clone()]);
+    neg_udiv.iter().zip(udiv.iter())
+        .map(|(n, p)| Term::new_op(Ite, [&xor, n, p])).collect()
+}
+
+define_core_op!(Srem, 2, bitblast: srem_bitblast);
+fn srem_bitblast(terms: &[TermVec]) -> TermVec {
+    let (x, y) = (&terms[0], &terms[1]);
+    let w = x.len();
+    if w == 1 {
+        return TermVec::from([&x[0] & !&y[0]])
+    }
+    let (sgnx, sgny) = (x.last().unwrap(), y.last().unwrap());
+    let negx = neg_bitblast(terms);
+    let negy = neg_bitblast(&terms[1..]);
+    let cndx = negx.iter().zip(x.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p])).collect();
+    let cndy = negy.iter().zip(y.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p])).collect();
+    let urem = urem_bitblast(&[cndx, cndy]);
+    let neg_urem = neg_bitblast(&[urem.clone()]);
+    neg_urem.iter().zip(urem.iter())
+        .map(|(n, p)| Term::new_op(Ite, [&sgnx, n, p])).collect()
+}
+
 // fn umulo_bitblast(terms: &[TermVec]) -> TermVec {
 //     let k = terms[0].len();
 //     if k == 1 { return TermVec::from([Term::bool_const(false)]); }

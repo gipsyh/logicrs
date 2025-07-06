@@ -2,12 +2,6 @@ use super::Term;
 use super::define::define_non_core_op;
 use super::{Concat, Eq, Slt, Ult, Xor};
 
-define_non_core_op!(Neg, 1, neg_normalize);
-fn neg_normalize(terms: &[Term]) -> Term {
-    let term = &terms[0];
-    !term + term.mk_bv_const_one()
-}
-
 define_non_core_op!(Inc, 1, inc_normalize);
 fn inc_normalize(terms: &[Term]) -> Term {
     &terms[0] + terms[0].mk_bv_const_one()
