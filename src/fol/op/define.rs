@@ -34,7 +34,6 @@ macro_rules! op_trait_impl {
     (cnf_encode $impl:expr) => {
         #[inline]
         fn cnf_encode(&self, dc: &mut crate::DagCnf, terms: &[crate::Lit]) -> crate::Lit {
-            debug_assert!(self.num_operand() == terms.len());
             $impl(dc, terms)
         }
     };
@@ -104,6 +103,35 @@ macro_rules! define_non_core_op {
     };
 }
 
+macro_rules! define_core_fold_op {
+    ($name:ident, $($be_impl:ident: $impl:expr),*) => {
+        #[derive(Hash, Debug, PartialEq, Clone, Copy)]
+        pub struct $name;
+        inventory::submit! {crate::fol::op::DynOpCollect(|| crate::fol::op::DynOp::create($name))}
+        impl crate::fol::op::Op for $name {
+            #[inline]
+            fn num_operand(&self) -> usize {
+                panic!("fold op has no num_operand");
+            }
+
+            #[inline]
+            fn is_core(&self) -> bool {
+                true
+            }
+
+            #[inline]
+            fn normalize(&self, _terms: &[crate::fol::Term]) -> crate::fol::Term {
+                panic!("{:?} not support normalize", self);
+            }
+
+            $(
+                crate::fol::op::define::op_trait_impl!($be_impl $impl);
+            )*
+        }
+    };
+}
+
+pub(crate) use define_core_fold_op;
 pub(crate) use define_core_op;
 pub(crate) use define_non_core_op;
 pub(crate) use op_trait_impl;

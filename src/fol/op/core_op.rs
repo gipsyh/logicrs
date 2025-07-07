@@ -1,6 +1,9 @@
+use std::slice;
+
 use super::define::define_core_op;
 use super::{Sort, Term, TermResult, TermVec};
 use crate::fol::BvConst;
+use crate::fol::op::define::define_core_fold_op;
 use crate::{DagCnf, Lit, LitVvec};
 
 #[inline]
@@ -98,6 +101,13 @@ fn and_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
+define_core_fold_op!(Ands, cnf_encode: ands_cnf_encode);
+fn ands_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
+    let l = dc.new_var().lit();
+    dc.add_rel(l.var(), &LitVvec::cnf_and(l, terms));
+    l
+}
+
 define_core_op!(Or, 2, bitblast: or_bitblast, cnf_encode: or_cnf_encode, simplify: or_simplify);
 fn or_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
@@ -166,6 +176,13 @@ fn or_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
+define_core_fold_op!(Ors, cnf_encode: ors_cnf_encode);
+fn ors_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
+    let l = dc.new_var().lit();
+    dc.add_rel(l.var(), &LitVvec::cnf_or(l, terms));
+    l
+}
+
 define_core_op!(Xor, 2, bitblast: xor_bitblast, cnf_encode: xor_cnf_encode, simplify: xor_simplify);
 fn xor_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
@@ -222,7 +239,7 @@ fn eq_simplify(terms: &[Term]) -> TermResult {
 }
 fn eq_bitblast(terms: &[TermVec]) -> TermVec {
     let neqs = Term::new_op_elementwise(Eq, &terms[0], &terms[1]);
-    TermVec::from([Term::new_op_fold(And, &neqs)])
+    TermVec::from([Term::new_op(Ands, &neqs)])
 }
 fn eq_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     let l = dc.new_var().lit();
@@ -302,7 +319,7 @@ fn sll_bitblast(terms: &[TermVec]) -> TermVec {
     }
 
     if stages < width {
-        let no_toobig = !Term::new_op_fold(Or, &y[stages..]);
+        let no_toobig = !Term::new_op(Ors, &y[stages..]);
         res = res
             .into_iter()
             .map(|b| Term::new_op(And, [&no_toobig, &b]))
@@ -336,7 +353,7 @@ fn srl_bitblast(terms: &[TermVec]) -> TermVec {
     }
 
     if stages < width {
-        let not_toobig = !Term::new_op_fold(Or, &y[stages..]);
+        let not_toobig = !Term::new_op(Ors, &y[stages..]);
         res = res
             .into_iter()
             .map(|b| Term::new_op(And, [&not_toobig, &b]))
@@ -370,7 +387,7 @@ fn sra_bitblast(terms: &[TermVec]) -> TermVec {
     }
 
     if stages < width {
-        let not_toobig = !Term::new_op_fold(Or, &y[stages..]);
+        let not_toobig = !Term::new_op(Ors, &y[stages..]);
         let sign = res[width - 1].clone();
         res = res
             .into_iter()
@@ -558,7 +575,7 @@ fn full_adder(x: &Term, y: &Term, c: &Term) -> (Term, Term) {
     let xy = x & y;
     let xc = x & c;
     let yc = y & c;
-    let c = Term::new_op_fold(Or, [&xy, &xc, &yc]);
+    let c = Term::new_op(Ors, [&xy, &xc, &yc]);
     (r, c)
 }
 
@@ -722,7 +739,7 @@ fn sdiv_bitblast(terms: &[TermVec]) -> TermVec {
         .map(|(n, p)| Term::new_op(Ite, [sgny, n, p]))
         .collect();
     let udiv = udiv_bitblast(&[cndx, cndy]);
-    let neg_udiv = neg_bitblast(&[udiv.clone()]);
+    let neg_udiv = neg_bitblast(slice::from_ref(&udiv));
     neg_udiv
         .iter()
         .zip(udiv.iter())
@@ -751,11 +768,11 @@ fn srem_bitblast(terms: &[TermVec]) -> TermVec {
         .map(|(n, p)| Term::new_op(Ite, [sgny, n, p]))
         .collect();
     let urem = urem_bitblast(&[cndx, cndy]);
-    let neg_urem = neg_bitblast(&[urem.clone()]);
+    let neg_urem = neg_bitblast(slice::from_ref(&urem));
     neg_urem
         .iter()
         .zip(urem.iter())
-        .map(|(n, p)| Term::new_op(Ite, [&sgnx, n, p]))
+        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p]))
         .collect()
 }
 
@@ -764,17 +781,17 @@ fn srem_bitblast(terms: &[TermVec]) -> TermVec {
 //     if k == 1 { return TermVec::from([Term::bool_const(false)]); }
 //     let mut
 //     for i in 0..w {
-//         let no_ofl = Term::new_op_fold(Or, terms)
+//         let no_ofl = Term::new_op(Ors, terms)
 //     }
 // }
 
 define_core_op!(Sdivo, 2, sort: bool_sort, bitblast: sdivo_bitblast);
 fn sdivo_bitblast(terms: &[TermVec]) -> TermVec {
-    let div_by0 = Term::new_op_fold(And, terms[1].iter().map(|t| !t));
+    let div_by0 = Term::new_op(Ands, terms[1].iter().map(|t| !t));
     let w = terms[0].len();
     assert!(w == terms[1].len());
-    let mneg_div_neg1 = Term::new_op_fold(And, &terms[1]) // -1
-        & Term::new_op_fold(And, terms[0][0..w-1].iter().map(|t| !t))
+    let mneg_div_neg1 = Term::new_op(Ands, &terms[1]) // -1
+        & Term::new_op(Ands, terms[0][0..w-1].iter().map(|t| !t))
         & &terms[0][w - 1]; // INT_MIN
     TermVec::from([div_by0 | mneg_div_neg1])
 }
