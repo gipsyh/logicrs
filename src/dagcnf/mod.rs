@@ -1,8 +1,8 @@
-mod replace;
 pub mod simplify;
 pub mod simulate;
+mod top;
 
-use crate::{Lit, LitVec, LitVvec, Var, VarMap, VarVMap};
+use crate::{Lit, LitVec, LitVvec, Var, VarLMap, VarMap, VarVMap};
 use giputils::hash::GHashSet;
 use std::{
     fmt::Display,
@@ -59,6 +59,12 @@ impl DagCnf {
     #[inline]
     pub fn var_iter(&self) -> RangeInclusive<Var> {
         Var::CONST..=self.max_var
+    }
+
+    /// var iter wo const
+    #[inline]
+    pub fn var_iter_woc(&self) -> RangeInclusive<Var> {
+        Var(1)..=self.max_var
     }
 
     #[inline]
@@ -255,6 +261,31 @@ impl DagCnf {
             res.add_rel(map(v), &new_cls);
         }
         res
+    }
+
+    pub fn replace(&mut self, map: &VarLMap) {
+        for (old, new) in map.iter() {
+            assert!(*old > new.var());
+        }
+
+        for v in Var::CONST..=self.max_var {
+            if map.contains_key(&v) {
+                self.cnf[v].clear();
+                self.dep[v].clear();
+            }
+            for cls in self.cnf[v].iter_mut() {
+                for l in cls.iter_mut() {
+                    if let Some(new) = map.map_lit(*l) {
+                        *l = new;
+                    }
+                }
+            }
+            for d in self.dep[v].iter_mut() {
+                if let Some(new) = map.map(*d) {
+                    *d = new.var();
+                }
+            }
+        }
     }
 }
 
