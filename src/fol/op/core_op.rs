@@ -776,6 +776,39 @@ fn srem_bitblast(terms: &[TermVec]) -> TermVec {
         .collect()
 }
 
+define_core_op!(Smod, 2, bitblast: smod_bitblast);
+fn smod_bitblast(terms: &[TermVec]) -> TermVec {
+    let (x, y) = (&terms[0], &terms[1]);
+    let w = x.len();
+    if w == 1 {
+        return TermVec::from([&x[0] & !&y[0]]);
+    }
+    let (sgnx, sgny) = (x.last().unwrap(), y.last().unwrap());
+    let negx = neg_bitblast(terms);
+    let negy = neg_bitblast(&terms[1..]);
+    let cndx = negx .iter().zip(x.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p])).collect();
+    let cndy = negy .iter().zip(y.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p])).collect();
+    let posi_urem = urem_bitblast(&[cndx, cndy]);
+    let nega_urem = neg_bitblast(slice::from_ref(&posi_urem));
+    let nega_urem_add = add_bitblast(&[nega_urem.clone(), y.clone()]);
+    let posi_urem_add = add_bitblast(&[posi_urem.clone(), y.clone()]);
+    let urem_is0 = Term::new_op(Ands, posi_urem.iter().map(|t| !t));
+
+    let both_posi = !sgnx & !sgny;
+    let nega_posi =  sgnx & !sgny;
+    let posi_nega = !sgnx &  sgny;
+    let posi_nega = posi_urem_add.iter().zip(nega_urem.iter())
+        .map(|(a, b)| Term::new_op(Ite, [&posi_nega, a, b]));
+    let nega_posi = nega_urem_add.iter().zip(posi_nega)
+        .map(|(a, b)| Term::new_op(Ite, [&nega_posi, a, &b]));
+    let both_posi = &urem_is0 | &both_posi;
+    let both_posi = posi_urem.iter().zip(nega_posi)
+        .map(|(a, b)| Term::new_op(Ite, [&both_posi, a, &b]));
+    both_posi.collect()
+}
+
 // fn umulo_bitblast(terms: &[TermVec]) -> TermVec {
 //     let k = terms[0].len();
 //     if k == 1 { return TermVec::from([Term::bool_const(false)]); }
