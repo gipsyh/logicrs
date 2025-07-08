@@ -1,6 +1,7 @@
 use crate::{Lit, Var};
 use giputils::hash::GHashMap;
 use std::{
+    mem::take,
     ops::{Deref, DerefMut, Index, IndexMut},
     ptr, slice,
 };
@@ -475,6 +476,12 @@ impl VarVMap {
 
     pub fn try_map_fn(&self) -> impl Fn(Var) -> Option<Var> + '_ {
         move |v| self.get(&v).copied()
+    }
+
+    pub fn map_key(&mut self, map: impl Fn(Var) -> Var) {
+        for (k, v) in take(&mut self.map) {
+            self.insert(map(k), v);
+        }
     }
 }
 

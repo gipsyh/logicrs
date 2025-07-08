@@ -104,6 +104,14 @@ impl DagCnf {
     }
 
     #[inline]
+    pub fn set_rel(&mut self, n: Var, rel: &[LitVec]) {
+        self.new_var_to(n);
+        self.dep[n].clear();
+        self.cnf[n].clear();
+        self.add_rel(n, rel);
+    }
+
+    #[inline]
     pub fn del_rel(&mut self, n: Var) {
         self.dep[n].clear();
         self.cnf[n].clear();
