@@ -654,6 +654,60 @@ fn mul_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
+define_core_op!(Umulo, 2, sort: bool_sort, bitblast: umulo_bitblast);
+fn umulo_bitblast(terms: &[TermVec]) -> TermVec {
+    /* Unsigned multiplication overflow detection.
+     * See M.Gok, M.J. Schulte, P.I. Balzola, "Efficient integer multiplication
+     * overflow detection circuits", 2001.
+     * http://ieeexplore.ieee.org/document/987767 */
+    let (mut x, mut y) = (terms[0].clone(), terms[1].clone());
+    let k = x.len();
+    if k == 1 {
+        return TermVec::from([Term::bool_const(false)]);
+    }
+    let mut uppc = x[k - 1].clone();
+    let mut res = Term::bool_const(false);
+    for i in 1..k {
+        let aand = &uppc & &y[i];
+        res = &res | &aand;
+        uppc = &x[k - 1 - i] | &uppc;
+    }
+    x.push(Term::bool_const(false));
+    y.push(Term::bool_const(false));
+    let mul = mul_bitblast(&[x, y]);
+    TermVec::from([&res | &mul[k]])
+}
+
+define_core_op!(Smulo, 2, sort: bool_sort, bitblast: smulo_bitblast);
+fn smulo_bitblast(terms: &[TermVec]) -> TermVec {
+    /* Signed multiplication overflow detection copied from Bitwuzla.
+     * See M.Gok, M.J. Schulte, P.I. Balzola, "Efficient integer multiplication
+     * overflow detection circuits", 2001.
+     * http://ieeexplore.ieee.org/document/987767 */
+    let (mut x, mut y) = (terms[0].clone(), terms[1].clone());
+    let k = x.len();
+    if k == 1 {
+        return TermVec::from([&x[0] & &y[0]]);
+    }
+    let (sgnx, sgny) = (x.last().unwrap().clone(), y.last().unwrap().clone());
+    x.push(sgnx.clone()); // sign extend by 1 bit
+    y.push(sgny.clone());
+    let mul = mul_bitblast(&[x.clone(), y.clone()]);
+    if k == 2 {
+        return TermVec::from([&mul[2] ^ &mul[1]]);
+    }
+
+    x.iter_mut().for_each(|b| *b = &*b ^ &sgnx);
+    y.iter_mut().for_each(|b| *b = &*b ^ &sgny);
+    let mut ppc = x[k - 2].clone();
+    let mut res = &ppc & &y[1];
+    for i in 1..k - 2 {
+        ppc = &ppc | &x[k - 2 - i];
+        res = &res | (&ppc & &y[i + 1]);
+    }
+    TermVec::from([&res | (&mul[k] ^ &mul[k - 1])])
+}
+
 fn scgate_co(r: &Term, d: &Term, ci: &Term) -> Term {
     let d_or_ci = d | ci;
     let d_and_ci = d & ci;
@@ -776,14 +830,50 @@ fn srem_bitblast(terms: &[TermVec]) -> TermVec {
         .collect()
 }
 
-// fn umulo_bitblast(terms: &[TermVec]) -> TermVec {
-//     let k = terms[0].len();
-//     if k == 1 { return TermVec::from([Term::bool_const(false)]); }
-//     let mut
-//     for i in 0..w {
-//         let no_ofl = Term::new_op(Ors, terms)
-//     }
-// }
+define_core_op!(Smod, 2, bitblast: smod_bitblast);
+fn smod_bitblast(terms: &[TermVec]) -> TermVec {
+    let (x, y) = (&terms[0], &terms[1]);
+    let w = x.len();
+    if w == 1 {
+        return TermVec::from([&x[0] & !&y[0]]);
+    }
+    let (sgnx, sgny) = (x.last().unwrap(), y.last().unwrap());
+    let negx = neg_bitblast(terms);
+    let negy = neg_bitblast(&terms[1..]);
+    let cndx = negx
+        .iter()
+        .zip(x.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgnx, n, p]))
+        .collect();
+    let cndy = negy
+        .iter()
+        .zip(y.iter())
+        .map(|(n, p)| Term::new_op(Ite, [sgny, n, p]))
+        .collect();
+    let posi_urem = urem_bitblast(&[cndx, cndy]);
+    let nega_urem = neg_bitblast(slice::from_ref(&posi_urem));
+    let nega_urem_add = add_bitblast(&[nega_urem.clone(), y.clone()]);
+    let posi_urem_add = add_bitblast(&[posi_urem.clone(), y.clone()]);
+    let urem_is0 = Term::new_op(Ands, posi_urem.iter().map(|t| !t));
+
+    let both_posi = !sgnx & !sgny;
+    let nega_posi = sgnx & !sgny;
+    let posi_nega = !sgnx & sgny;
+    let posi_nega = posi_urem_add
+        .iter()
+        .zip(nega_urem.iter())
+        .map(|(a, b)| Term::new_op(Ite, [&posi_nega, a, b]));
+    let nega_posi = nega_urem_add
+        .iter()
+        .zip(posi_nega)
+        .map(|(a, b)| Term::new_op(Ite, [&nega_posi, a, &b]));
+    let both_posi = &urem_is0 | &both_posi;
+    let both_posi = posi_urem
+        .iter()
+        .zip(nega_posi)
+        .map(|(a, b)| Term::new_op(Ite, [&both_posi, a, &b]));
+    both_posi.collect()
+}
 
 define_core_op!(Sdivo, 2, sort: bool_sort, bitblast: sdivo_bitblast);
 fn sdivo_bitblast(terms: &[TermVec]) -> TermVec {
