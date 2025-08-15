@@ -4,7 +4,10 @@ use crate::{
 };
 use giputils::{allocator::Gallocator, grc::Grc, hash::GHashSet, heap::BinaryHeap};
 use log::info;
-use std::{iter::once, time::Instant};
+use std::{
+    iter::once,
+    time::{Duration, Instant},
+};
 
 pub struct DagCnfSimplify {
     cdb: Grc<Gallocator<LitOrdVec>>,
@@ -14,6 +17,7 @@ pub struct DagCnfSimplify {
     frozen: GHashSet<Var>,
     value: VarAssign,
     num_ocls: usize,
+    time: Duration,
 }
 
 impl DagCnfSimplify {
@@ -31,6 +35,7 @@ impl DagCnfSimplify {
             frozen: GHashSet::from_iter([Var::CONST]),
             value,
             num_ocls,
+            time: Duration::default(),
         };
         for v in Var::CONST..=max_var {
             for mut cls in dagcnf.cnf[v].clone() {
@@ -237,10 +242,12 @@ impl DagCnfSimplify {
     }
 
     pub fn bve_simplify(&mut self) {
+        let start = Instant::now();
         self.enable_occur();
         while let Some(v) = self.occur.as_mut().unwrap().1.pop() {
             self.eliminate(v);
         }
+        self.time += start.elapsed();
     }
 
     fn cls_subsume_check(&mut self, ci: usize) {
@@ -293,6 +300,7 @@ impl DagCnfSimplify {
     }
 
     pub fn subsume_simplify(&mut self) {
+        let start = Instant::now();
         self.enable_occur();
         for v in Var::CONST..=self.max_var {
             for cls in self.cnf[v.lit()].clone() {
@@ -307,6 +315,7 @@ impl DagCnfSimplify {
             self.cnf[v.lit()].retain(|&c| !self.cdb.is_removed(c));
             self.cnf[!v.lit()].retain(|&c| !self.cdb.is_removed(c));
         }
+        self.time += start.elapsed();
     }
 
     fn const_simp_var(&mut self, v: Var) {
@@ -327,6 +336,7 @@ impl DagCnfSimplify {
     }
 
     pub fn const_simplify(&mut self) {
+        let start = Instant::now();
         self.disable_occur();
         for v in Var(1)..=self.max_var {
             self.const_simp_var(v);
@@ -341,13 +351,11 @@ impl DagCnfSimplify {
                 }
             }
         }
+        self.time += start.elapsed();
     }
 
-    pub fn simplify(&mut self) -> DagCnf {
+    pub fn finalize(&mut self) -> DagCnf {
         let start = Instant::now();
-        self.const_simplify();
-        self.bve_simplify();
-        self.subsume_simplify();
         let mut dagcnf = DagCnf::new();
         dagcnf.new_var_to(self.max_var);
         for v in Var(1)..=self.max_var {
@@ -367,13 +375,21 @@ impl DagCnfSimplify {
             }
             dagcnf.add_rel(v, &cnf);
         }
+        self.time += start.elapsed();
         info!(
             "dagcnf simplified from {} to {} clauses in {:.2}s",
             self.num_ocls,
             dagcnf.num_clause(),
-            start.elapsed().as_secs_f64()
+            self.time.as_secs_f64()
         );
         dagcnf
+    }
+
+    pub fn simplify(&mut self) -> DagCnf {
+        self.const_simplify();
+        self.bve_simplify();
+        self.subsume_simplify();
+        self.finalize()
     }
 }
 
