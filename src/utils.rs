@@ -139,6 +139,11 @@ impl<T: Default> LitMap<T> {
     }
 
     #[inline]
+    pub fn max_index(&self) -> Var {
+        Var((self.len() as u32 / 2) - 1)
+    }
+
+    #[inline]
     pub fn swap(&mut self, x: Lit, y: Lit) {
         let px = ptr::addr_of_mut!(self[x]);
         let py = ptr::addr_of_mut!(self[y]);
