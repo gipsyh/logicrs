@@ -279,10 +279,15 @@ impl DagCnfSimplify {
                 continue;
             } else if let Some(diff) = diff {
                 if self.cdb[ci].len() == self.cdb[cj].len() {
-                    assert!(diff.var() != self.cdb[ci].last().var());
+                    if diff.var() == self.cdb[ci].last().var() {
+                        self.cdb.dealloc(ci);
+                        self.cdb.dealloc(cj);
+                        self.cnf[self.cdb[ci].last()].retain(|&c| c != ci);
+                        self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
+                        return;
+                    }
                     let mut cube = self.cdb[ci].cube().clone();
                     cube.retain(|l| *l != diff);
-                    assert!(cube.last() == self.cdb[ci].last());
                     self.cdb[ci] = LitOrdVec::new(cube);
                     self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
                     self.cdb.dealloc(cj);
@@ -324,8 +329,9 @@ impl DagCnfSimplify {
         for c in cls {
             let cls = self.cdb[c].clone();
             if let Some(scls) = cls.ordered_simp(&self.value) {
-                assert!(scls.last().var() == v);
-                if cls.len() != scls.len() {
+                if scls.last().var() != v {
+                    removed.push(c);
+                } else if cls.len() != scls.len() {
                     self.add_rel(scls);
                 }
             } else {
