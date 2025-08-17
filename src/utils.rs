@@ -25,6 +25,12 @@ impl<T: Default> VarMap<T> {
     }
 
     #[inline]
+    pub fn max_var(&self) -> Var {
+        assert!(!self.is_empty());
+        Var((self.len() as u32) - 1)
+    }
+
+    #[inline]
     pub fn reserve(&mut self, var: Var) {
         let len = Into::<usize>::into(var) + 1;
         if self.len() < len {

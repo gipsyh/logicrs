@@ -1,4 +1,4 @@
-use crate::{Lbool, Lit, Var, VarMap};
+use crate::{Lbool, Lit, LitVec, Var, VarMap};
 use giputils::bitvec::BitVec;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 
@@ -117,5 +117,24 @@ impl VarBitVec {
         } else {
             self.vbv[lit.var()].clone()
         }
+    }
+
+    #[inline]
+    pub fn assign(&self, idx: usize, filter: Option<impl Iterator<Item = Var>>) -> LitVec {
+        let mut assump = LitVec::new();
+        if let Some(filter) = filter {
+            for v in filter {
+                let b = self[v].get(idx);
+                let l = v.lit().not_if(!b);
+                assump.push(l);
+            }
+        } else {
+            for v in Var::CONST..=self.vbv.max_var() {
+                let b = self[v].get(idx);
+                let l = v.lit().not_if(!b);
+                assump.push(l);
+            }
+        }
+        assump
     }
 }
