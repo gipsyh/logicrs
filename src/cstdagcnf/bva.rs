@@ -215,7 +215,7 @@ mod tests {
     use crate::Cnf;
 
     #[test]
-    fn test_bva() {
+    fn test0() {
         let mut cnf = Cnf::new();
         cnf.add_clause(&[Lit::from(1), Lit::from(3)]);
         cnf.add_clause(&[Lit::from(1), Lit::from(4)]);
@@ -225,6 +225,19 @@ mod tests {
         cnf.add_clause(&[Lit::from(2), Lit::from(4)]);
         cnf.add_clause(&[Lit::from(2), Lit::from(5)]);
         cnf.add_clause(&[Lit::from(2), Lit::from(6)]);
+        let bva = BVA::new(cnf);
+        dbg!(bva.bva());
+    }
+
+    #[test]
+    fn test1() {
+        let mut cnf = Cnf::new();
+        cnf.add_clause(&[Lit::from(1), Lit::from(-2), Lit::from(3)]);
+        cnf.add_clause(&[Lit::from(-1), Lit::from(2), Lit::from(3)]);
+        cnf.add_clause(&[Lit::from(1), Lit::from(-2), Lit::from(4)]);
+        cnf.add_clause(&[Lit::from(-1), Lit::from(2), Lit::from(4)]);
+        cnf.add_clause(&[Lit::from(1), Lit::from(-2), Lit::from(5)]);
+        cnf.add_clause(&[Lit::from(-1), Lit::from(2), Lit::from(5)]);
         let bva = BVA::new(cnf);
         dbg!(bva.bva());
     }
