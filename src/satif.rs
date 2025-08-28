@@ -56,4 +56,8 @@ pub trait Satif {
     fn clauses(&self) -> Vec<LitVec> {
         panic!("unsupport get clauses");
     }
+
+    fn set_seed(&mut self, _seed: u64) {
+        panic!("unsupport set seed");
+    }
 }
