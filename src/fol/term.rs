@@ -358,6 +358,11 @@ impl BvConst {
     }
 
     #[inline]
+    pub fn is_one(&self) -> bool {
+        self.c[0] && self.c.iter().skip(1).all(|x| !*x)
+    }
+
+    #[inline]
     pub fn is_ones(&self) -> bool {
         self.c.iter().all(|x| *x)
     }
