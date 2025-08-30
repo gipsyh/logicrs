@@ -73,11 +73,8 @@ fn ordered_and_simplify(a: &Term, b: &Term) -> TermResult {
             return TermResult::Some(!(&aop[0] | &bop[0]));
         }
         if aop.op == Or {
-            if aop[0] == b {
-                return TermResult::Some(b & &aop[1]);
-            }
-            if aop[1] == b {
-                return TermResult::Some(b & &aop[0]);
+            if aop[0] == b || aop[1] == b {
+                return TermResult::Some(b.clone());
             }
             if let Some(bop) = b.try_op()
                 && bop.op == Or
