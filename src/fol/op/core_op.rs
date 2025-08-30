@@ -1,10 +1,9 @@
-use std::slice;
-
 use super::define::define_core_op;
 use super::{Sort, Term, TermResult, TermVec};
 use crate::fol::BvConst;
 use crate::fol::op::define::define_core_fold_op;
 use crate::{DagCnf, Lit, LitVvec};
+use std::slice;
 
 #[inline]
 fn bool_sort(_terms: &[Term]) -> Sort {
