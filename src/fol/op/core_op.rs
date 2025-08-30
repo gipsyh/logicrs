@@ -879,8 +879,13 @@ fn sdivo_bitblast(terms: &[TermVec]) -> TermVec {
     let div_by0 = Term::new_op(Ands, terms[1].iter().map(|t| !t));
     let w = terms[0].len();
     assert!(w == terms[1].len());
+    let t = if w == 1 {
+        Term::bool_const(true)
+    } else {
+        Term::new_op(Ands, terms[0][0..w - 1].iter().map(|t| !t))
+    };
     let mneg_div_neg1 = Term::new_op(Ands, &terms[1]) // -1
-        & Term::new_op(Ands, terms[0][0..w-1].iter().map(|t| !t))
+        & t
         & &terms[0][w - 1]; // INT_MIN
     TermVec::from([div_by0 | mneg_div_neg1])
 }

@@ -69,6 +69,7 @@ impl Term {
     pub fn new_op(op: impl Into<DynOp>, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
         let op: DynOp = op.into();
         let terms: Vec<Term> = terms.into_iter().map(|t| t.as_ref().clone()).collect();
+        debug_assert!(!terms.is_empty());
         if !op.is_core() {
             return op.normalize(&terms);
         }
