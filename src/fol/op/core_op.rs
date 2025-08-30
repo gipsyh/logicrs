@@ -603,7 +603,7 @@ fn add_bitblast(terms: &[TermVec]) -> TermVec {
     }
     res
 }
-define_core_op!(Sub, 2, bitblast: sub_bitblast);
+define_core_op!(Sub, 2, bitblast: sub_bitblast, simplify: sub_simplify);
 fn sub_bitblast(terms: &[TermVec]) -> TermVec {
     let mut r;
     let mut c = Term::bool_const(true);
@@ -613,6 +613,18 @@ fn sub_bitblast(terms: &[TermVec]) -> TermVec {
         res.push(r);
     }
     res
+}
+fn sub_simplify(terms: &[Term]) -> TermResult {
+    let (x, y) = (&terms[0], &terms[1]);
+    if let Some(yc) = y.try_bv_const() {
+        if yc.is_zero() {
+            return TermResult::Some(x.clone());
+        }
+        if x.bv_len() == 1 && yc.is_one() {
+            return TermResult::Some(!x.clone());
+        }
+    }
+    TermResult::None
 }
 
 // define_core_op!(Uaddo, 2, sort: bool_sort, bitblast: uaddo_bitblast);
