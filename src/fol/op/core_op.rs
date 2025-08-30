@@ -795,14 +795,14 @@ fn udiv_bitblast(terms: &[TermVec]) -> TermVec {
     q
 }
 
-fn udiv_simplify(terms: &[Term]) -> TermResult {
-    let (x, _y) = (&terms[0], &terms[1]);
-    if let Some(xc) = x.try_bv_const() {
-        if xc.is_zero() {
-            return TermResult::Some(x.clone());
-        }
-    }
-    return TermResult::None;
+fn udiv_simplify(_terms: &[Term]) -> TermResult {
+    // let (x, _y) = (&terms[0], &terms[1]);
+    // if let Some(xc) = x.try_bv_const() {
+    //     if xc.is_zero() {
+    //         return TermResult::Some(x.clone());
+    //     }
+    // }
+    TermResult::None
 }
 
 define_core_op!(Urem, 2, bitblast: urem_bitblast);
