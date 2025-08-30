@@ -295,6 +295,26 @@ impl DagCnf {
             }
         }
     }
+
+    pub fn migrate(&mut self, other: &DagCnf, t: Var, map: &mut VarVMap) {
+        if map.get(&t).is_some() {
+            return;
+        }
+        for rel in other[t].iter() {
+            for &l in rel.iter() {
+                if l.var() != t {
+                    self.migrate(other, l.var(), map);
+                }
+            }
+        }
+        let n = self.new_var();
+        map.insert(t, n);
+        let mut new_rel = Vec::new();
+        for rel in other[t].iter() {
+            new_rel.push(rel.map(|l| map.lit_map(l).unwrap()));
+        }
+        self.add_rel(n, &new_rel);
+    }
 }
 
 impl Default for DagCnf {
