@@ -961,7 +961,7 @@ fn onehot_encode(x: &[Term]) -> TermVec {
             res[j] = shift.ite(&res[j - ss], &res[j]);
         }
     }
-    TermVec::from(res.as_slice())
+    TermVec::from(res)
 }
 
 fn read_bitblast(terms: &[TermVec]) -> TermVec {

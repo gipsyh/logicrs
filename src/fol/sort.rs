@@ -18,6 +18,18 @@ impl Sort {
     }
 
     #[inline]
+    pub fn size(&self) -> usize {
+        match self {
+            Sort::Bv(s) => *s,
+            Sort::Array(i, e) => {
+                let i = (*i).try_into().unwrap();
+                let shifted = 1usize.checked_shl(i).unwrap();
+                shifted.checked_mul(*e).unwrap()
+            }
+        }
+    }
+
+    #[inline]
     pub fn bv(&self) -> usize {
         if let Sort::Bv(w) = self { *w } else { panic!() }
     }
