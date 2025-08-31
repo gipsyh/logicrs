@@ -2,6 +2,7 @@ use super::op::{Add, And, Ite, Neg, Not, Or, Sub, Xor};
 use super::{op::DynOp, sort::Sort};
 use crate::fol::TermVec;
 use crate::fol::op::Slice;
+use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::GHashMap;
 use lazy_static::lazy_static;
@@ -411,6 +412,17 @@ impl Debug for BvConst {
             .rev()
             .collect();
         write!(f, "BvConst({c:})")
+    }
+}
+
+impl Into<BitVec> for &BvConst {
+    #[inline]
+    fn into(self) -> BitVec {
+        let mut res = BitVec::new();
+        for x in self.c.iter() {
+            res.push(*x);
+        }
+        res
     }
 }
 
