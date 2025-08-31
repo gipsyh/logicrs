@@ -951,11 +951,13 @@ fn read_sort(terms: &[Term]) -> Sort {
 fn onehot_rec(idx: usize, x: &[Term], res: &mut [Term]) {
     let len = 1_usize.checked_shl(idx as u32).unwrap();
     debug_assert!(res.len() == len.checked_mul(2).unwrap());
+    res[0] = &res[0] & !&x[idx];
     for i in 0..len {
-        res[i] = &res[i] & !&x[idx];
+        res[i] = res[0].clone();
     }
+    res[len] = &res[len] & &x[idx];
     for i in len..res.len() {
-        res[i] = &res[i] & &x[idx];
+        res[i] = res[len].clone();
     }
     if idx == 0 {
         return;
