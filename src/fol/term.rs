@@ -55,7 +55,10 @@ impl Term {
     pub fn bv_const_from_usize(mut v: usize, width: usize) -> Term {
         let mut bv = Vec::new();
         while v > 0 {
-            bv.push(width & 1 == 1);
+            if bv.len() >= width {
+                break;
+            }
+            bv.push(v & 1 == 1);
             v >>= 1;
         }
         while bv.len() < width {
