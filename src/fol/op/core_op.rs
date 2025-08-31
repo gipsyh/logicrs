@@ -948,19 +948,26 @@ fn read_sort(terms: &[Term]) -> Sort {
     Sort::Bv(e)
 }
 
+fn onehot_rec(idx: usize, x: &[Term], res: &mut [Term]) {
+    let len = 1_usize.checked_shl(idx as u32).unwrap();
+    debug_assert!(res.len() == len.checked_mul(2).unwrap());
+    for i in 0..len {
+        res[i] = &res[i] & !&x[idx];
+    }
+    for i in len..res.len() {
+        res[i] = &res[i] & &x[idx];
+    }
+    if idx == 0 {
+        return;
+    }
+    onehot_rec(idx - 1, x, &mut res[0..len]);
+    onehot_rec(idx - 1, x, &mut res[len..]);
+}
+
 fn onehot_encode(x: &[Term]) -> TermVec {
     let len = 1_usize.checked_shl(x.len() as u32).unwrap();
-    let mut res = vec![Term::bool_const(false); len];
-    res[0] = Term::bool_const(true);
-    for (sb, shift) in x.iter().enumerate() {
-        let ss = 1 << sb;
-        for rj in &mut res[0..ss] {
-            *rj = !shift & &rj;
-        }
-        for j in ss..len {
-            res[j] = shift.ite(&res[j - ss], &res[j]);
-        }
-    }
+    let mut res = vec![Term::bool_const(true); len];
+    onehot_rec(x.len() - 1, x, &mut res);
     TermVec::from(res)
 }
 
