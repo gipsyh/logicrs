@@ -9,7 +9,7 @@ use std::ops::Index;
 
 #[derive(Clone, Debug)]
 pub struct DagCnfSimulation {
-    sim: VarMap<BitVec>,
+    pub(crate) sim: VarMap<BitVec>,
 }
 
 impl Index<Var> for DagCnfSimulation {
@@ -22,30 +22,6 @@ impl Index<Var> for DagCnfSimulation {
 }
 
 impl DagCnfSimulation {
-    pub fn new(num_word: usize, dc: &DagCnf) -> Self {
-        let mut rng = StdRng::seed_from_u64(0);
-        let mut sim = VarMap::new_with(dc.max_var());
-        sim[Var::CONST] = BitVec::new_with(num_word * BitVec::WORD_SIZE, false);
-        let mut leafs = GHashSet::new();
-        for v in Var(1)..=dc.max_var() {
-            if dc.is_leaf(v) {
-                loop {
-                    let x = BitVec::new_rand(num_word, &mut rng);
-                    if !leafs.contains(&x) {
-                        leafs.insert(x.clone());
-                        sim[v] = x;
-                        break;
-                    }
-                }
-            } else {
-                sim[v] = BitVec::new_with(num_word * BitVec::WORD_SIZE, false);
-            }
-        }
-        let mut s = Self { sim };
-        s.simulate(dc);
-        s
-    }
-
     #[inline]
     pub fn val(&self, lit: Lit) -> BitVec {
         if !lit.polarity() {
@@ -93,5 +69,31 @@ impl DagCnfSimulation {
         for v in 0..val.len() {
             self.sim[Var(v as u32)].push(val.get(v));
         }
+    }
+}
+
+impl DagCnf {
+    pub fn simulation(&self, num_word: usize) -> DagCnfSimulation {
+        let mut rng = StdRng::seed_from_u64(0);
+        let mut sim = VarMap::new_with(self.max_var());
+        sim[Var::CONST] = BitVec::new_with(num_word * BitVec::WORD_SIZE, false);
+        let mut leafs = GHashSet::new();
+        for v in Var(1)..=self.max_var() {
+            if self.is_leaf(v) {
+                loop {
+                    let x = BitVec::new_rand(num_word, &mut rng);
+                    if !leafs.contains(&x) {
+                        leafs.insert(x.clone());
+                        sim[v] = x;
+                        break;
+                    }
+                }
+            } else {
+                sim[v] = BitVec::new_with(num_word * BitVec::WORD_SIZE, false);
+            }
+        }
+        let mut s = DagCnfSimulation { sim };
+        s.simulate(self);
+        s
     }
 }

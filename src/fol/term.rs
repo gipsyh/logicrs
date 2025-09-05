@@ -2,6 +2,7 @@ use super::op::{Add, And, Ite, Neg, Not, Or, Sub, Xor};
 use super::{op::DynOp, sort::Sort};
 use crate::fol::TermVec;
 use crate::fol::op::Slice;
+use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::GHashMap;
 use lazy_static::lazy_static;
@@ -55,7 +56,10 @@ impl Term {
     pub fn bv_const_from_usize(mut v: usize, width: usize) -> Term {
         let mut bv = Vec::new();
         while v > 0 {
-            bv.push(width & 1 == 1);
+            if bv.len() >= width {
+                break;
+            }
+            bv.push(v & 1 == 1);
             v >>= 1;
         }
         while bv.len() < width {
@@ -69,6 +73,7 @@ impl Term {
     pub fn new_op(op: impl Into<DynOp>, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
         let op: DynOp = op.into();
         let terms: Vec<Term> = terms.into_iter().map(|t| t.as_ref().clone()).collect();
+        debug_assert!(!terms.is_empty());
         if !op.is_core() {
             return op.normalize(&terms);
         }
@@ -357,6 +362,11 @@ impl BvConst {
     }
 
     #[inline]
+    pub fn is_one(&self) -> bool {
+        self.c[0] && self.c.iter().skip(1).all(|x| !*x)
+    }
+
+    #[inline]
     pub fn is_ones(&self) -> bool {
         self.c.iter().all(|x| *x)
     }
@@ -402,6 +412,17 @@ impl Debug for BvConst {
             .rev()
             .collect();
         write!(f, "BvConst({c:})")
+    }
+}
+
+impl Into<BitVec> for &BvConst {
+    #[inline]
+    fn into(self) -> BitVec {
+        let mut res = BitVec::new();
+        for x in self.c.iter() {
+            res.push(*x);
+        }
+        res
     }
 }
 

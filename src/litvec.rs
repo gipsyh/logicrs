@@ -19,7 +19,7 @@ impl LitVec {
     }
 
     #[inline]
-    pub fn new_with(c: usize) -> Self {
+    pub fn new_with_cap(c: usize) -> Self {
         LitVec {
             lits: Vec::with_capacity(c),
         }
@@ -39,7 +39,7 @@ impl LitVec {
 
     #[inline]
     pub fn ordered_simp(&self, v: &VarAssign) -> Option<Self> {
-        let mut res = LitVec::new();
+        let mut res = LitVec::new_with_cap(self.len());
         for i in 0..self.len() {
             let lv = v.v(self[i]);
             if lv.is_true() {
@@ -210,7 +210,7 @@ impl LitVec {
         } else {
             (other, self)
         };
-        let mut new = LitVec::new_with(self.len() + other.len());
+        let mut new = LitVec::new_with_cap(self.len() + other.len());
         let (mut i, mut j) = (0, 0);
         while i < x.len() {
             if x[i].var() == v {
@@ -235,7 +235,7 @@ impl LitVec {
 
     #[inline]
     pub fn map_var(&self, f: impl Fn(Var) -> Var) -> LitVec {
-        let mut new = LitVec::new_with(self.len());
+        let mut new = LitVec::new_with_cap(self.len());
         for l in self.iter() {
             new.push(l.map_var(&f));
         }
@@ -244,7 +244,7 @@ impl LitVec {
 
     #[inline]
     pub fn filter_map_var(&self, f: impl Fn(Var) -> Option<Var>) -> LitVec {
-        let mut new = LitVec::new_with(self.len());
+        let mut new = LitVec::new_with_cap(self.len());
         for l in self.iter() {
             if let Some(l) = l.filter_map_var(&f) {
                 new.push(l);
@@ -255,7 +255,7 @@ impl LitVec {
 
     #[inline]
     pub fn map(&self, f: impl Fn(Lit) -> Lit) -> LitVec {
-        let mut new = LitVec::new_with(self.len());
+        let mut new = LitVec::new_with_cap(self.len());
         for l in self.iter() {
             new.push(f(*l));
         }

@@ -17,13 +17,7 @@ impl BvConst {
 }
 
 pub fn var_bitblast(sort: Sort) -> TermVec {
-    let size = match sort {
-        Sort::Bv(s) => s,
-        Sort::Array(i, e) => {
-            let shifted = 1usize.checked_shl(i as u32).unwrap();
-            shifted.checked_mul(e).unwrap()
-        }
-    };
+    let size = sort.size();
     repeat_with(|| Term::new_var(Sort::bool()))
         .take(size)
         .collect()

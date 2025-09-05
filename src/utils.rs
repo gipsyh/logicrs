@@ -1,6 +1,7 @@
 use crate::{Lit, Var};
 use giputils::hash::GHashMap;
 use std::{
+    mem::take,
     ops::{Deref, DerefMut, Index, IndexMut},
     ptr, slice,
 };
@@ -21,6 +22,12 @@ impl<T: Default> VarMap<T> {
         let mut res = Self::new();
         res.reserve(var);
         res
+    }
+
+    #[inline]
+    pub fn max_var(&self) -> Var {
+        assert!(!self.is_empty());
+        Var((self.len() as u32) - 1)
     }
 
     #[inline]
@@ -135,6 +142,11 @@ impl<T: Default> LitMap<T> {
         if self.len() < len {
             self.map.resize_with(len, Default::default)
         }
+    }
+
+    #[inline]
+    pub fn max_index(&self) -> Var {
+        Var((self.len() as u32 / 2) - 1)
     }
 
     #[inline]
@@ -475,6 +487,20 @@ impl VarVMap {
 
     pub fn try_map_fn(&self) -> impl Fn(Var) -> Option<Var> + '_ {
         move |v| self.get(&v).copied()
+    }
+
+    pub fn map_key(&mut self, map: impl Fn(Var) -> Var) {
+        for (k, v) in take(&mut self.map) {
+            self.insert(map(k), v);
+        }
+    }
+
+    pub fn filter_map_key(&mut self, map: impl Fn(Var) -> Option<Var>) {
+        for (k, v) in take(&mut self.map) {
+            if let Some(n) = map(k) {
+                self.insert(n, v);
+            }
+        }
     }
 }
 

@@ -1,10 +1,9 @@
-use std::slice;
-
 use super::define::define_core_op;
 use super::{Sort, Term, TermResult, TermVec};
 use crate::fol::BvConst;
 use crate::fol::op::define::define_core_fold_op;
 use crate::{DagCnf, Lit, LitVvec};
+use std::slice;
 
 #[inline]
 fn bool_sort(_terms: &[Term]) -> Sort {
@@ -32,51 +31,52 @@ fn not_cnf_encode(_dc: &mut DagCnf, terms: &[Lit]) -> Lit {
 }
 
 define_core_op!(And, 2, bitblast: and_bitblast, cnf_encode: and_cnf_encode, simplify: and_simplify);
-fn and_simplify(terms: &[Term]) -> TermResult {
-    let x = &terms[0];
-    let y = &terms[1];
-    let simp = |a: &Term, b: &Term| {
-        if let Some(ac) = a.try_bv_const() {
-            if ac.is_ones() {
-                return TermResult::Some(b.clone());
-            }
-            if ac.is_zero() {
-                return TermResult::Some(a.clone());
-            }
+
+fn ordered_and_simplify(a: &Term, b: &Term) -> TermResult {
+    if let Some(ac) = a.try_bv_const() {
+        if ac.is_ones() {
+            return TermResult::Some(b.clone());
         }
-        if a == b {
+        if ac.is_zero() {
             return TermResult::Some(a.clone());
         }
-        if a == &!b {
-            return TermResult::Some(a.mk_bv_const_zero());
-        }
-        if let Some(aop) = a.try_op() {
-            if aop.op == And {
-                if let Some(bop) = b.try_op()
-                    && bop.op == And
-                {
-                    if aop[0] == bop[0] {
-                        return TermResult::Some(&aop[0] & &aop[1] & &bop[1]);
-                    }
-                    if aop[0] == bop[1] {
-                        return TermResult::Some(&aop[0] & &aop[1] & &bop[0]);
-                    }
-                }
-                if b == &aop[0] {
-                    return TermResult::Some(b & &aop[1]);
-                }
-                if b == &aop[1] {
-                    return TermResult::Some(b & &aop[0]);
-                }
-            }
-            if aop.op == Not
-                && let Some(bop) = b.try_op()
-                && bop.op == Not
+    }
+    if a == b {
+        return TermResult::Some(a.clone());
+    }
+    if a == &!b {
+        return TermResult::Some(a.mk_bv_const_zero());
+    }
+    if let Some(aop) = a.try_op() {
+        if aop.op == And {
+            if let Some(bop) = b.try_op()
+                && bop.op == And
             {
-                return TermResult::Some(!(&aop[0] | &bop[0]));
+                if aop[0] == bop[0] {
+                    return TermResult::Some(&aop[0] & &aop[1] & &bop[1]);
+                }
+                if aop[0] == bop[1] {
+                    return TermResult::Some(&aop[0] & &aop[1] & &bop[0]);
+                }
             }
-            if aop.op == Or
-                && let Some(bop) = b.try_op()
+            if b == &aop[0] {
+                return TermResult::Some(b & &aop[1]);
+            }
+            if b == &aop[1] {
+                return TermResult::Some(b & &aop[0]);
+            }
+        }
+        if aop.op == Not
+            && let Some(bop) = b.try_op()
+            && bop.op == Not
+        {
+            return TermResult::Some(!(&aop[0] | &bop[0]));
+        }
+        if aop.op == Or {
+            if aop[0] == b || aop[1] == b {
+                return TermResult::Some(b.clone());
+            }
+            if let Some(bop) = b.try_op()
                 && bop.op == Or
             {
                 if aop[0] == bop[0] {
@@ -87,10 +87,14 @@ fn and_simplify(terms: &[Term]) -> TermResult {
                 }
             }
         }
-        TermResult::None
-    };
-    simp(x, y)?;
-    simp(y, x)
+    }
+    TermResult::None
+}
+fn and_simplify(terms: &[Term]) -> TermResult {
+    let x = &terms[0];
+    let y = &terms[1];
+    ordered_and_simplify(x, y)?;
+    ordered_and_simplify(y, x)
 }
 fn and_bitblast(terms: &[TermVec]) -> TermVec {
     Term::new_op_elementwise(And, &terms[0], &terms[1])
@@ -248,7 +252,7 @@ fn eq_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
 }
 
 define_core_op!(Ult, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify);
-define_core_op!(Usubo, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify);
+// define_core_op!(Usubo, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify);
 fn ult_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
     let y = &terms[1];
@@ -552,9 +556,6 @@ fn sext_bitblast(terms: &[TermVec]) -> TermVec {
 }
 
 define_core_op!(Slice, 3, sort: slice_sort, bitblast: slice_bitblast, simplify: slice_simplify);
-fn slice_simplify(_terms: &[Term]) -> TermResult {
-    TermResult::None
-}
 fn slice_sort(terms: &[Term]) -> Sort {
     Sort::Bv(terms[1].bv_len() - terms[2].bv_len() + 1)
 }
@@ -562,6 +563,15 @@ fn slice_bitblast(terms: &[TermVec]) -> TermVec {
     let l = terms[2].len();
     let h = terms[1].len();
     terms[0][l..=h].iter().cloned().collect()
+}
+fn slice_simplify(terms: &[Term]) -> TermResult {
+    let s = &terms[0];
+    let l = terms[2].bv_len();
+    let h = terms[1].bv_len();
+    if l == 0 && h == 0 && s.bv_len() == 1 {
+        return TermResult::Some(s.clone());
+    }
+    TermResult::None
 }
 
 define_core_op!(Redxor, 1, sort: bool_sort, bitblast: redxor_bitblast);
@@ -590,7 +600,7 @@ fn add_bitblast(terms: &[TermVec]) -> TermVec {
     }
     res
 }
-define_core_op!(Sub, 2, bitblast: sub_bitblast);
+define_core_op!(Sub, 2, bitblast: sub_bitblast, simplify: sub_simplify);
 fn sub_bitblast(terms: &[TermVec]) -> TermVec {
     let mut r;
     let mut c = Term::bool_const(true);
@@ -601,43 +611,55 @@ fn sub_bitblast(terms: &[TermVec]) -> TermVec {
     }
     res
 }
-
-define_core_op!(Uaddo, 2, sort: bool_sort, bitblast: uaddo_bitblast);
-fn uaddo_bitblast(terms: &[TermVec]) -> TermVec {
-    let mut x = terms[0].clone();
-    let mut y = terms[1].clone();
-    x.push(Term::bool_const(false));
-    y.push(Term::bool_const(false));
-    x = add_bitblast(&[x, y]);
-    [x[x.len() - 1].clone()].into()
-}
-define_core_op!(Saddo, 2, sort: bool_sort, bitblast: saddo_bitblast);
-fn saddo_bitblast(terms: &[TermVec]) -> TermVec {
-    assert_eq!(terms.len(), 2);
-    let w = terms[0].len();
-    let sx = &terms[0][w - 1]; // sign bits
-    let sy = &terms[1][w - 1];
-    let sum = add_bitblast(terms);
-    let ss = &sum[w - 1];
-    let v1 = sx & sy & !ss;
-    let v2 = !sx & !sy & ss;
-    TermVec::from([v1 | v2])
-}
-define_core_op!(Ssubo, 2, sort: bool_sort, bitblast: ssubo_bitblast);
-fn ssubo_bitblast(terms: &[TermVec]) -> TermVec {
-    assert_eq!(terms.len(), 2);
-    let w = terms[0].len();
-    let sx = &terms[0][w - 1];
-    let sy = &terms[1][w - 1];
-    // compute w-bit (x - y) discarding carry_out
-    let diff = sub_bitblast(terms);
-    let sr = &diff[w - 1];
-    let v1 = sx & !sy & !sr;
-    let v2 = !sx & sy & sr;
-    TermVec::from([v1 | v2])
+fn sub_simplify(terms: &[Term]) -> TermResult {
+    let (x, y) = (&terms[0], &terms[1]);
+    if let Some(yc) = y.try_bv_const() {
+        if yc.is_zero() {
+            return TermResult::Some(x.clone());
+        }
+        if x.bv_len() == 1 && yc.is_one() {
+            return TermResult::Some(!x.clone());
+        }
+    }
+    TermResult::None
 }
 
-define_core_op!(Mul, 2, bitblast: mul_bitblast);
+// define_core_op!(Uaddo, 2, sort: bool_sort, bitblast: uaddo_bitblast);
+// fn uaddo_bitblast(terms: &[TermVec]) -> TermVec {
+//     let mut x = terms[0].clone();
+//     let mut y = terms[1].clone();
+//     x.push(Term::bool_const(false));
+//     y.push(Term::bool_const(false));
+//     x = add_bitblast(&[x, y]);
+//     [x[x.len() - 1].clone()].into()
+// }
+// define_core_op!(Saddo, 2, sort: bool_sort, bitblast: saddo_bitblast);
+// fn saddo_bitblast(terms: &[TermVec]) -> TermVec {
+//     assert_eq!(terms.len(), 2);
+//     let w = terms[0].len();
+//     let sx = &terms[0][w - 1]; // sign bits
+//     let sy = &terms[1][w - 1];
+//     let sum = add_bitblast(terms);
+//     let ss = &sum[w - 1];
+//     let v1 = sx & sy & !ss;
+//     let v2 = !sx & !sy & ss;
+//     TermVec::from([v1 | v2])
+// }
+// define_core_op!(Ssubo, 2, sort: bool_sort, bitblast: ssubo_bitblast);
+// fn ssubo_bitblast(terms: &[TermVec]) -> TermVec {
+//     assert_eq!(terms.len(), 2);
+//     let w = terms[0].len();
+//     let sx = &terms[0][w - 1];
+//     let sy = &terms[1][w - 1];
+//     // compute w-bit (x - y) discarding carry_out
+//     let diff = sub_bitblast(terms);
+//     let sr = &diff[w - 1];
+//     let v1 = sx & !sy & !sr;
+//     let v2 = !sx & sy & sr;
+//     TermVec::from([v1 | v2])
+// }
+
+define_core_op!(Mul, 2, bitblast: mul_bitblast, simplify: mul_simplify);
 fn mul_bitblast(terms: &[TermVec]) -> TermVec {
     let x = &terms[0];
     let y = &terms[1];
@@ -654,59 +676,77 @@ fn mul_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Umulo, 2, sort: bool_sort, bitblast: umulo_bitblast);
-fn umulo_bitblast(terms: &[TermVec]) -> TermVec {
-    /* Unsigned multiplication overflow detection.
-     * See M.Gok, M.J. Schulte, P.I. Balzola, "Efficient integer multiplication
-     * overflow detection circuits", 2001.
-     * http://ieeexplore.ieee.org/document/987767 */
-    let (mut x, mut y) = (terms[0].clone(), terms[1].clone());
-    let k = x.len();
-    if k == 1 {
-        return TermVec::from([Term::bool_const(false)]);
+fn ordered_mul_simplify(x: &Term, y: &Term) -> TermResult {
+    if let Some(xc) = x.try_bv_const() {
+        if xc.is_zero() {
+            return TermResult::Some(x.clone());
+        }
+        if xc.is_one() {
+            return TermResult::Some(y.clone());
+        }
     }
-    let mut uppc = x[k - 1].clone();
-    let mut res = Term::bool_const(false);
-    for i in 1..k {
-        let aand = &uppc & &y[i];
-        res = &res | &aand;
-        uppc = &x[k - 1 - i] | &uppc;
-    }
-    x.push(Term::bool_const(false));
-    y.push(Term::bool_const(false));
-    let mul = mul_bitblast(&[x, y]);
-    TermVec::from([&res | &mul[k]])
+    TermResult::None
 }
 
-define_core_op!(Smulo, 2, sort: bool_sort, bitblast: smulo_bitblast);
-fn smulo_bitblast(terms: &[TermVec]) -> TermVec {
-    /* Signed multiplication overflow detection copied from Bitwuzla.
-     * See M.Gok, M.J. Schulte, P.I. Balzola, "Efficient integer multiplication
-     * overflow detection circuits", 2001.
-     * http://ieeexplore.ieee.org/document/987767 */
-    let (mut x, mut y) = (terms[0].clone(), terms[1].clone());
-    let k = x.len();
-    if k == 1 {
-        return TermVec::from([&x[0] & &y[0]]);
-    }
-    let (sgnx, sgny) = (x.last().unwrap().clone(), y.last().unwrap().clone());
-    x.push(sgnx.clone()); // sign extend by 1 bit
-    y.push(sgny.clone());
-    let mul = mul_bitblast(&[x.clone(), y.clone()]);
-    if k == 2 {
-        return TermVec::from([&mul[2] ^ &mul[1]]);
-    }
-
-    x.iter_mut().for_each(|b| *b = &*b ^ &sgnx);
-    y.iter_mut().for_each(|b| *b = &*b ^ &sgny);
-    let mut ppc = x[k - 2].clone();
-    let mut res = &ppc & &y[1];
-    for i in 1..k - 2 {
-        ppc = &ppc | &x[k - 2 - i];
-        res = &res | (&ppc & &y[i + 1]);
-    }
-    TermVec::from([&res | (&mul[k] ^ &mul[k - 1])])
+fn mul_simplify(terms: &[Term]) -> TermResult {
+    let (x, y) = (&terms[0], &terms[1]);
+    ordered_mul_simplify(x, y)?;
+    ordered_mul_simplify(y, x)
 }
+
+// define_core_op!(Umulo, 2, sort: bool_sort, bitblast: umulo_bitblast);
+// fn umulo_bitblast(terms: &[TermVec]) -> TermVec {
+//     /* Unsigned multiplication overflow detection.
+//      * See M.Gok, M.J. Schulte, P.I. Balzola, "Efficient integer multiplication
+//      * overflow detection circuits", 2001.
+//      * http://ieeexplore.ieee.org/document/987767 */
+//     let (mut x, mut y) = (terms[0].clone(), terms[1].clone());
+//     let k = x.len();
+//     if k == 1 {
+//         return TermVec::from([Term::bool_const(false)]);
+//     }
+//     let mut uppc = x[k - 1].clone();
+//     let mut res = Term::bool_const(false);
+//     for i in 1..k {
+//         let aand = &uppc & &y[i];
+//         res = &res | &aand;
+//         uppc = &x[k - 1 - i] | &uppc;
+//     }
+//     x.push(Term::bool_const(false));
+//     y.push(Term::bool_const(false));
+//     let mul = mul_bitblast(&[x, y]);
+//     TermVec::from([&res | &mul[k]])
+// }
+
+// define_core_op!(Smulo, 2, sort: bool_sort, bitblast: smulo_bitblast);
+// fn smulo_bitblast(terms: &[TermVec]) -> TermVec {
+//     /* Signed multiplication overflow detection copied from Bitwuzla.
+//      * See M.Gok, M.J. Schulte, P.I. Balzola, "Efficient integer multiplication
+//      * overflow detection circuits", 2001.
+//      * http://ieeexplore.ieee.org/document/987767 */
+//     let (mut x, mut y) = (terms[0].clone(), terms[1].clone());
+//     let k = x.len();
+//     if k == 1 {
+//         return TermVec::from([&x[0] & &y[0]]);
+//     }
+//     let (sgnx, sgny) = (x.last().unwrap().clone(), y.last().unwrap().clone());
+//     x.push(sgnx.clone()); // sign extend by 1 bit
+//     y.push(sgny.clone());
+//     let mul = mul_bitblast(&[x.clone(), y.clone()]);
+//     if k == 2 {
+//         return TermVec::from([&mul[2] ^ &mul[1]]);
+//     }
+
+//     x.iter_mut().for_each(|b| *b = &*b ^ &sgnx);
+//     y.iter_mut().for_each(|b| *b = &*b ^ &sgny);
+//     let mut ppc = x[k - 2].clone();
+//     let mut res = &ppc & &y[1];
+//     for i in 1..k - 2 {
+//         ppc = &ppc | &x[k - 2 - i];
+//         res = &res | (&ppc & &y[i + 1]);
+//     }
+//     TermVec::from([&res | (&mul[k] ^ &mul[k - 1])])
+// }
 
 fn scgate_co(r: &Term, d: &Term, ci: &Term) -> Term {
     let d_or_ci = d | ci;
@@ -746,11 +786,22 @@ fn udiv_urem_bitblast(a: &TermVec, din: &TermVec) -> (TermVec, TermVec) {
     (q, TermVec::from(s[size][1..=size].to_vec()))
 }
 
-define_core_op!(Udiv, 2, bitblast: udiv_bitblast);
+define_core_op!(Udiv, 2, bitblast: udiv_bitblast, simplify: udiv_simplify);
 fn udiv_bitblast(terms: &[TermVec]) -> TermVec {
     let (q, _) = udiv_urem_bitblast(&terms[0], &terms[1]);
     q
 }
+
+fn udiv_simplify(_terms: &[Term]) -> TermResult {
+    // let (x, _y) = (&terms[0], &terms[1]);
+    // if let Some(xc) = x.try_bv_const() {
+    //     if xc.is_zero() {
+    //         return TermResult::Some(x.clone());
+    //     }
+    // }
+    TermResult::None
+}
+
 define_core_op!(Urem, 2, bitblast: urem_bitblast);
 fn urem_bitblast(terms: &[TermVec]) -> TermVec {
     let (_, r) = udiv_urem_bitblast(&terms[0], &terms[1]);
@@ -875,16 +926,21 @@ fn smod_bitblast(terms: &[TermVec]) -> TermVec {
     both_posi.collect()
 }
 
-define_core_op!(Sdivo, 2, sort: bool_sort, bitblast: sdivo_bitblast);
-fn sdivo_bitblast(terms: &[TermVec]) -> TermVec {
-    let div_by0 = Term::new_op(Ands, terms[1].iter().map(|t| !t));
-    let w = terms[0].len();
-    assert!(w == terms[1].len());
-    let mneg_div_neg1 = Term::new_op(Ands, &terms[1]) // -1
-        & Term::new_op(Ands, terms[0][0..w-1].iter().map(|t| !t))
-        & &terms[0][w - 1]; // INT_MIN
-    TermVec::from([div_by0 | mneg_div_neg1])
-}
+// define_core_op!(Sdivo, 2, sort: bool_sort, bitblast: sdivo_bitblast);
+// fn sdivo_bitblast(terms: &[TermVec]) -> TermVec {
+//     let div_by0 = Term::new_op(Ands, terms[1].iter().map(|t| !t));
+//     let w = terms[0].len();
+//     assert!(w == terms[1].len());
+//     let t = if w == 1 {
+//         Term::bool_const(true)
+//     } else {
+//         Term::new_op(Ands, terms[0][0..w - 1].iter().map(|t| !t))
+//     };
+//     let mneg_div_neg1 = Term::new_op(Ands, &terms[1]) // -1
+//         & t
+//         & &terms[0][w - 1]; // INT_MIN
+//     TermVec::from([div_by0 | mneg_div_neg1])
+// }
 
 define_core_op!(Read, 2, sort: read_sort, bitblast: read_bitblast);
 fn read_sort(terms: &[Term]) -> Sort {
@@ -892,20 +948,29 @@ fn read_sort(terms: &[Term]) -> Sort {
     Sort::Bv(e)
 }
 
+fn onehot_rec(idx: usize, x: &[Term], res: &mut [Term]) {
+    let len = 1_usize.checked_shl(idx as u32).unwrap();
+    debug_assert!(res.len() == len.checked_mul(2).unwrap());
+    res[0] = &res[0] & !&x[idx];
+    for i in 0..len {
+        res[i] = res[0].clone();
+    }
+    res[len] = &res[len] & &x[idx];
+    for i in len..res.len() {
+        res[i] = res[len].clone();
+    }
+    if idx == 0 {
+        return;
+    }
+    onehot_rec(idx - 1, x, &mut res[0..len]);
+    onehot_rec(idx - 1, x, &mut res[len..]);
+}
+
 fn onehot_encode(x: &[Term]) -> TermVec {
     let len = 1_usize.checked_shl(x.len() as u32).unwrap();
-    let mut res = vec![Term::bool_const(false); len];
-    res[0] = Term::bool_const(true);
-    for (sb, shift) in x.iter().enumerate() {
-        let ss = 1 << sb;
-        for rj in &mut res[0..ss] {
-            *rj = !shift & &rj;
-        }
-        for j in ss..len {
-            res[j] = shift.ite(&res[j - ss], &res[j]);
-        }
-    }
-    TermVec::from(res.as_slice())
+    let mut res = vec![Term::bool_const(true); len];
+    onehot_rec(x.len() - 1, x, &mut res);
+    TermVec::from(res)
 }
 
 fn read_bitblast(terms: &[TermVec]) -> TermVec {
