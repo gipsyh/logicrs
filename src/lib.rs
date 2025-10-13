@@ -115,7 +115,7 @@ impl Display for Var {
 
 impl Step for Var {
     #[inline]
-    fn steps_between(start: &Self, end: &Self) -> Option<usize> {
+    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
         u32::steps_between(&start.0, &end.0)
     }
 
