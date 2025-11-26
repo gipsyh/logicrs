@@ -1,6 +1,6 @@
 use std::{
-    fmt::Debug,
-    ops::{BitAnd, BitOr, Not},
+    fmt::{self, Debug, Display, Write},
+    ops::{BitAnd, BitOr, Deref, DerefMut, Not},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -58,13 +58,21 @@ impl Default for Lbool {
 }
 
 impl Debug for Lbool {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let field = match *self {
-            Lbool::TRUE => Some(true),
-            Lbool::FALSE => Some(false),
-            _ => None,
+            Lbool::TRUE => '1',
+            Lbool::FALSE => '0',
+            _ => 'X',
         };
-        f.debug_tuple("Lbool").field(&field).finish()
+        f.write_char(field)
+    }
+}
+
+impl Display for Lbool {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
     }
 }
 
@@ -120,5 +128,43 @@ impl BitOr for Lbool {
         } else {
             Self(self.0 | rhs.0)
         }
+    }
+}
+
+#[derive(Clone, Default, PartialEq, Eq)]
+pub struct LboolVec {
+    v: Vec<Lbool>,
+}
+
+impl Deref for LboolVec {
+    type Target = Vec<Lbool>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.v
+    }
+}
+
+impl DerefMut for LboolVec {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.v
+    }
+}
+
+impl Debug for LboolVec {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for lb in self.v.iter().rev() {
+            Debug::fmt(lb, f)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for LboolVec {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{self:?}")
     }
 }
