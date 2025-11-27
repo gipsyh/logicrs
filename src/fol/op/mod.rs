@@ -9,9 +9,9 @@ pub use core_op::*;
 use giputils::hash::GHashMap;
 use lazy_static::lazy_static;
 pub use other_op::*;
-use std::fmt;
+use std::fmt::{self, Display};
 use std::{
-    any::{TypeId, type_name},
+    any::TypeId,
     borrow::Borrow,
     fmt::Debug,
     hash::{Hash, Hasher},
@@ -23,11 +23,6 @@ pub trait Op: Debug + 'static {
     #[inline]
     fn type_id(&self) -> TypeId {
         TypeId::of::<Self>()
-    }
-
-    #[inline]
-    fn name(&self) -> &str {
-        type_name::<Self>().split("::").last().unwrap()
     }
 
     #[inline]
@@ -74,7 +69,10 @@ impl DynOp {
 impl<T: Op> From<T> for DynOp {
     #[inline]
     fn from(op: T) -> Self {
-        Self::from(op.name())
+        OP_MAP
+            .get(&op.type_id())
+            .unwrap_or_else(|| panic!("unsupport {op:?} op!"))
+            .clone()
     }
 }
 
@@ -88,6 +86,13 @@ impl Deref for DynOp {
 }
 
 impl Debug for DynOp {
+    #[inline]
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.op.fmt(f)
+    }
+}
+
+impl Display for DynOp {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.op.fmt(f)
@@ -126,11 +131,19 @@ struct DynOpCollect(fn() -> DynOp);
 inventory::collect!(DynOpCollect);
 
 lazy_static! {
-    static ref OP_MAP: GHashMap<String, DynOp> = {
+    static ref OP_MAP: GHashMap<TypeId, DynOp> = {
         let mut m = GHashMap::new();
         for op in inventory::iter::<DynOpCollect> {
             let op = op.0();
-            m.insert(op.name().to_lowercase(), op);
+            m.insert(op.type_id(), op);
+        }
+        m
+    };
+    static ref STR_OP_MAP: GHashMap<String, DynOp> = {
+        let mut m = GHashMap::new();
+        for op in inventory::iter::<DynOpCollect> {
+            let op = op.0();
+            m.insert(format!("{op}").to_lowercase(), op);
         }
         m
     };
@@ -139,7 +152,7 @@ lazy_static! {
 impl From<&str> for DynOp {
     #[inline]
     fn from(value: &str) -> Self {
-        OP_MAP
+        STR_OP_MAP
             .get(&value.to_lowercase())
             .unwrap_or_else(|| panic!("unsupport {value} op!"))
             .clone()
@@ -147,13 +160,6 @@ impl From<&str> for DynOp {
 }
 
 // pub enum BiOpType {
-//     Rol,
-//     Ror,
-//     Sdiv,
-//     Udiv,
-//     Smod,
-//     Srem,
-//     Urem,
 //     Saddo,
 //     Uaddo,
 //     Sdivo,

@@ -64,6 +64,12 @@ macro_rules! define_core_op {
                 crate::fol::op::define::op_trait_impl!($be_impl $impl);
             )*
         }
+        impl std::fmt::Display for $name {
+            #[inline]
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{self:?}")
+            }
+        }
     };
 }
 
@@ -76,6 +82,12 @@ macro_rules! define_non_core_op {
             #[inline]
             fn num_operand(&self) -> usize {
                 $num_operand
+            }
+        }
+        impl std::fmt::Display for $name {
+            #[inline]
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{self:?}")
             }
         }
     };
@@ -98,6 +110,12 @@ macro_rules! define_non_core_op {
             fn normalize(&self, terms: &[crate::fol::Term]) -> crate::fol::Term {
                 debug_assert!(self.num_operand() == terms.len());
                 $normalize(terms)
+            }
+        }
+        impl std::fmt::Display for $name {
+            #[inline]
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{self:?}")
             }
         }
     };
@@ -127,6 +145,12 @@ macro_rules! define_core_fold_op {
             $(
                 crate::fol::op::define::op_trait_impl!($be_impl $impl);
             )*
+        }
+        impl std::fmt::Display for $name {
+            #[inline]
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{self:?}")
+            }
         }
     };
 }
