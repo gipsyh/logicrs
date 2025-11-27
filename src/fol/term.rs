@@ -186,6 +186,33 @@ impl Term {
     pub fn mk_bv_const_ones(&self) -> Term {
         Term::bv_const_ones(self.bv_len())
     }
+
+    #[inline]
+    fn apply_rec(
+        &self,
+        r: &impl Fn(&Term) -> Option<Term>,
+        map: &mut GHashMap<Term, Term>,
+    ) -> Term {
+        if let Some(r) = map.get(self) {
+            return r.clone();
+        }
+        let r = if let Some(r) = r(self) {
+            r
+        } else {
+            self.try_op()
+                .map(|op_term| {
+                    let a: Vec<Term> = op_term.terms.iter().map(|t| t.apply_rec(r, map)).collect();
+                    Term::new_op(op_term.op.clone(), a)
+                })
+                .unwrap_or(self.clone())
+        };
+        map.insert(self.clone(), r.clone());
+        r
+    }
+
+    pub fn apply(&self, r: impl Fn(&Term) -> Option<Term>) -> Term {
+        self.apply_rec(&r, &mut GHashMap::new())
+    }
 }
 
 impl Deref for Term {
