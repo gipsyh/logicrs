@@ -774,12 +774,12 @@ fn udiv_urem_bitblast(a: &TermVec, din: &TermVec) -> (TermVec, TermVec) {
     for j in 0..size {
         c[j][0] = Term::bool_const(true);
         s[j][0] = a[size - j - 1].clone();
-        for i in 0..size {
-            c[j][i + 1] = scgate_co(&s[j][i], &nd[i], &c[j][i]);
+        for (i, ndi) in nd.iter().enumerate().take(size) {
+            c[j][i + 1] = scgate_co(&s[j][i], ndi, &c[j][i]);
         }
         q.push(&c[j][size] | &s[j][size]);
-        for i in 0..size {
-            s[j + 1][i + 1] = scgate_s(&s[j][i], &nd[i], &c[j][i], &q[j]);
+        for (i, ndi) in nd.iter().enumerate().take(size) {
+            s[j + 1][i + 1] = scgate_s(&s[j][i], ndi, &c[j][i], &q[j]);
         }
     }
     q.reverse(); // quotients come MSB first

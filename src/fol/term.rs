@@ -53,23 +53,6 @@ impl Term {
     }
 
     #[inline]
-    pub fn bv_const_from_usize(mut v: usize, width: usize) -> Term {
-        let mut bv = Vec::new();
-        while v > 0 {
-            if bv.len() >= width {
-                break;
-            }
-            bv.push(v & 1 == 1);
-            v >>= 1;
-        }
-        while bv.len() < width {
-            bv.push(false);
-        }
-        bv.truncate(width);
-        Self::bv_const(BvConst::new(&bv))
-    }
-
-    #[inline]
     pub fn new_op(op: impl Into<DynOp>, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
         let op: DynOp = op.into();
         let terms: Vec<Term> = terms.into_iter().map(|t| t.as_ref().clone()).collect();
@@ -384,6 +367,22 @@ impl BvConst {
             None
         }
     }
+
+    pub fn from_usize(mut v: usize, width: usize) -> Self {
+        let mut bv = Vec::new();
+        while v > 0 {
+            if bv.len() >= width {
+                break;
+            }
+            bv.push(v & 1 == 1);
+            v >>= 1;
+        }
+        while bv.len() < width {
+            bv.push(false);
+        }
+        bv.truncate(width);
+        Self::new(&bv)
+    }
 }
 
 impl Deref for BvConst {
@@ -415,11 +414,11 @@ impl Debug for BvConst {
     }
 }
 
-impl Into<BitVec> for &BvConst {
+impl From<&BvConst> for BitVec {
     #[inline]
-    fn into(self) -> BitVec {
+    fn from(val: &BvConst) -> Self {
         let mut res = BitVec::new();
-        for x in self.c.iter() {
+        for x in val.c.iter() {
             res.push(*x);
         }
         res
