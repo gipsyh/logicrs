@@ -1,7 +1,7 @@
 use super::op::{Add, And, Ite, Neg, Not, Or, Sub, Xor};
 use super::{op::DynOp, sort::Sort};
-use crate::fol::TermVec;
-use crate::fol::op::Slice;
+use crate::fol::op::{Concat, Slice};
+use crate::fol::{TermVec, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::GHashMap;
@@ -166,10 +166,28 @@ impl Term {
         self.op2(Ite, t, e)
     }
 
+    #[inline]
     pub fn slice(&self, l: usize, h: usize) -> Term {
         let h = Self::bv_const_zero(h);
         let l = Self::bv_const_zero(l);
         self.op2(Slice, &h, &l)
+    }
+
+    #[inline]
+    pub fn concat(&self, o: &Term) -> Term {
+        self.op1(Concat, o)
+    }
+
+    /// Term Eq, different from PartialEq trait
+    #[inline]
+    pub fn teq(&self, o: &Term) -> Term {
+        self.op1(op::Eq, o)
+    }
+
+    /// Term Neq, different from PartialEq trait
+    #[inline]
+    pub fn tneq(&self, o: &Term) -> Term {
+        self.op1(op::Neq, o)
     }
 
     #[inline]
