@@ -30,29 +30,6 @@ impl Term {
     }
 
     #[inline]
-    pub fn bv_const_zero(len: usize) -> Term {
-        tm().new_term(
-            TermType::Const(BvConst::new(&vec![false; len])),
-            Sort::Bv(len),
-        )
-    }
-
-    #[inline]
-    pub fn bv_const_one(len: usize) -> Term {
-        let mut c = vec![false; len];
-        c[0] = true;
-        tm().new_term(TermType::Const(BvConst::new(&c)), Sort::Bv(len))
-    }
-
-    #[inline]
-    pub fn bv_const_ones(len: usize) -> Term {
-        tm().new_term(
-            TermType::Const(BvConst::new(&vec![true; len])),
-            Sort::Bv(len),
-        )
-    }
-
-    #[inline]
     pub fn new_op(op: impl Into<DynOp>, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
         let op: DynOp = op.into();
         let terms: Vec<Term> = terms.into_iter().map(|t| t.as_ref().clone()).collect();
@@ -168,8 +145,8 @@ impl Term {
 
     #[inline]
     pub fn slice(&self, l: usize, h: usize) -> Term {
-        let h = Self::bv_const_zero(h);
-        let l = Self::bv_const_zero(l);
+        let h = Self::bv_const(BvConst::zero(h));
+        let l = Self::bv_const(BvConst::zero(l));
         self.op2(Slice, &h, &l)
     }
 
@@ -192,17 +169,17 @@ impl Term {
 
     #[inline]
     pub fn mk_bv_const_zero(&self) -> Term {
-        Term::bv_const_zero(self.bv_len())
+        Term::bv_const(BvConst::zero(self.bv_len()))
     }
 
     #[inline]
     pub fn mk_bv_const_one(&self) -> Term {
-        Term::bv_const_one(self.bv_len())
+        Term::bv_const(BvConst::one(self.bv_len()))
     }
 
     #[inline]
     pub fn mk_bv_const_ones(&self) -> Term {
-        Term::bv_const_ones(self.bv_len())
+        Term::bv_const(BvConst::ones(self.bv_len()))
     }
 
     #[inline]
@@ -382,6 +359,25 @@ impl BvConst {
     #[inline]
     pub fn new(c: &[bool]) -> Self {
         Self { c: c.to_vec() }
+    }
+
+    #[inline]
+    pub fn zero(len: usize) -> Self {
+        Self {
+            c: vec![false; len],
+        }
+    }
+
+    #[inline]
+    pub fn one(len: usize) -> Self {
+        let mut c = vec![false; len];
+        c[0] = true;
+        Self { c }
+    }
+
+    #[inline]
+    pub fn ones(len: usize) -> Self {
+        Self { c: vec![true; len] }
     }
 
     #[inline]
