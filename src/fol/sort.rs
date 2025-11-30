@@ -59,7 +59,7 @@ impl Debug for Sort {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Value {
     BV(BitVec),
     Array(GHashMap<usize, BitVec>),

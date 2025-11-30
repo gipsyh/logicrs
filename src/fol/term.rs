@@ -183,7 +183,7 @@ impl Term {
     }
 
     #[inline]
-    fn apply_rec(
+    pub fn cached_apply(
         &self,
         r: &impl Fn(&Term) -> Option<Term>,
         map: &mut GHashMap<Term, Term>,
@@ -196,7 +196,11 @@ impl Term {
         } else {
             self.try_op()
                 .map(|op_term| {
-                    let a: Vec<Term> = op_term.terms.iter().map(|t| t.apply_rec(r, map)).collect();
+                    let a: Vec<Term> = op_term
+                        .terms
+                        .iter()
+                        .map(|t| t.cached_apply(r, map))
+                        .collect();
                     Term::new_op(op_term.op.clone(), a)
                 })
                 .unwrap_or(self.clone())
@@ -206,7 +210,7 @@ impl Term {
     }
 
     pub fn apply(&self, r: impl Fn(&Term) -> Option<Term>) -> Term {
-        self.apply_rec(&r, &mut GHashMap::new())
+        self.cached_apply(&r, &mut GHashMap::new())
     }
 }
 
