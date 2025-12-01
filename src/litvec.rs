@@ -261,6 +261,17 @@ impl LitVec {
         }
         new
     }
+
+    #[inline]
+    pub fn filter_map(&self, f: impl Fn(Lit) -> Option<Lit>) -> LitVec {
+        let mut new = LitVec::new_with_cap(self.len());
+        for &l in self.iter() {
+            if let Some(l) = f(l) {
+                new.push(l);
+            }
+        }
+        new
+    }
 }
 
 impl Default for LitVec {
