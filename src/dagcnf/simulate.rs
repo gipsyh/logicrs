@@ -76,7 +76,7 @@ impl DagCnf {
     pub fn simulation(&self, num_word: usize) -> DagCnfSimulation {
         let mut rng = StdRng::seed_from_u64(0);
         let mut sim = VarMap::new_with(self.max_var());
-        sim[Var::CONST] = BitVec::new_with(num_word * BitVec::WORD_SIZE, false);
+        sim[Var::CONST] = BitVec::from_elem(num_word * BitVec::WORD_SIZE, false);
         let mut leafs = GHashSet::new();
         for v in Var(1)..=self.max_var() {
             if self.is_leaf(v) {
@@ -89,7 +89,7 @@ impl DagCnf {
                     }
                 }
             } else {
-                sim[v] = BitVec::new_with(num_word * BitVec::WORD_SIZE, false);
+                sim[v] = BitVec::from_elem(num_word * BitVec::WORD_SIZE, false);
             }
         }
         let mut s = DagCnfSimulation { sim };

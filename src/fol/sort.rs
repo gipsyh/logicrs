@@ -69,7 +69,7 @@ impl Value {
     #[inline]
     pub fn default_from(sort: &Sort) -> Self {
         match sort {
-            Sort::Bv(w) => Value::BV(BitVec::new_with(*w, false)),
+            Sort::Bv(w) => Value::BV(BitVec::from_elem(*w, false)),
             Sort::Array(_, _) => Value::Array(GHashMap::default()),
         }
     }

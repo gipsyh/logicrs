@@ -1,19 +1,17 @@
-use super::{BvConst, Sort, Term, TermType, TermVec};
+use super::{Sort, Term, TermType, TermVec};
 use crate::{DagCnf, Lit};
-use giputils::hash::GHashMap;
+use giputils::{bitvec::BitVec, hash::GHashMap};
 use std::{iter::repeat_with, ops::Deref};
 
-impl BvConst {
-    #[inline]
-    pub fn bitblast(&self) -> TermVec {
-        self.iter().map(|c| Term::bool_const(*c)).collect()
-    }
+#[inline]
+fn bv_const_bitblast(c: &BitVec) -> TermVec {
+    c.iter().map(Term::bool_const).collect()
+}
 
-    #[inline]
-    pub fn cnf_encode(&self) -> Lit {
-        debug_assert!(self.len() == 1);
-        Lit::constant(self[0])
-    }
+#[inline]
+fn bv_const_cnf_encode(c: &BitVec) -> Lit {
+    debug_assert!(c.len() == 1);
+    Lit::constant(c.get(0))
 }
 
 pub fn var_bitblast(sort: Sort) -> TermVec {
@@ -29,7 +27,7 @@ impl Term {
             return res.clone();
         }
         let blast = match self.deref() {
-            TermType::Const(const_term) => const_term.bitblast(),
+            TermType::Const(const_term) => bv_const_bitblast(const_term),
             TermType::Var(_) => var_bitblast(self.sort()),
             TermType::Op(op_term) => {
                 let terms: Vec<TermVec> = op_term.terms.iter().map(|s| s.bitblast(map)).collect();
@@ -45,7 +43,7 @@ impl Term {
             return *res;
         }
         let blast = match self.deref() {
-            TermType::Const(const_term) => const_term.cnf_encode(),
+            TermType::Const(const_term) => bv_const_cnf_encode(const_term),
             TermType::Var(_) => dc.new_var().lit(),
             TermType::Op(op_term) => {
                 let terms: Vec<Lit> = op_term

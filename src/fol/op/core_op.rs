@@ -1,6 +1,5 @@
 use super::define::define_core_op;
 use super::{Sort, Term, TermResult, TermVec};
-use crate::fol::BvConst;
 use crate::fol::op::define::define_core_fold_op;
 use crate::{DagCnf, Lit, LitVvec};
 use std::slice;
@@ -528,9 +527,9 @@ fn concat_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
     let y = &terms[1];
     if let (Some(xc), Some(yc)) = (x.try_bv_const(), y.try_bv_const()) {
-        let mut c = yc.to_vec();
-        c.extend_from_slice(xc);
-        return TermResult::Some(Term::bv_const(BvConst::new(&c)));
+        let mut c = yc.clone();
+        c.extend(xc.iter());
+        return TermResult::Some(Term::bv_const(c));
     }
     TermResult::None
 }

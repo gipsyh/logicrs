@@ -7,9 +7,9 @@ use giputils::grc::Grc;
 use giputils::hash::GHashMap;
 use lazy_static::lazy_static;
 use std::fmt::{self, Debug};
+use std::hash;
 use std::iter::once;
-use std::ops::{DerefMut, Index};
-use std::{hash, ops};
+use std::ops::Index;
 use std::{hash::Hash, ops::Deref};
 
 #[derive(Clone)]
@@ -20,11 +20,11 @@ pub struct Term {
 impl Term {
     #[inline]
     pub fn bool_const(c: bool) -> Term {
-        tm().new_term(TermType::Const(BvConst::new(&[c])), Sort::Bv(1))
+        tm().new_term(TermType::Const(BitVec::from(&[c])), Sort::Bv(1))
     }
 
     #[inline]
-    pub fn bv_const(c: BvConst) -> Term {
+    pub fn bv_const(c: BitVec) -> Term {
         let sort = Sort::Bv(c.len());
         tm().new_term(TermType::Const(c), sort)
     }
@@ -101,7 +101,7 @@ impl Term {
     }
 
     #[inline]
-    pub fn try_bv_const(&self) -> Option<&BvConst> {
+    pub fn try_bv_const(&self) -> Option<&BitVec> {
         match self.deref() {
             TermType::Const(c) => Some(c),
             _ => None,
@@ -145,8 +145,8 @@ impl Term {
 
     #[inline]
     pub fn slice(&self, l: usize, h: usize) -> Term {
-        let h = Self::bv_const(BvConst::zero(h));
-        let l = Self::bv_const(BvConst::zero(l));
+        let h = Self::bv_const(BitVec::zero(h));
+        let l = Self::bv_const(BitVec::zero(l));
         self.op2(Slice, &h, &l)
     }
 
@@ -169,17 +169,17 @@ impl Term {
 
     #[inline]
     pub fn mk_bv_const_zero(&self) -> Term {
-        Term::bv_const(BvConst::zero(self.bv_len()))
+        Term::bv_const(BitVec::zero(self.bv_len()))
     }
 
     #[inline]
     pub fn mk_bv_const_one(&self) -> Term {
-        Term::bv_const(BvConst::one(self.bv_len()))
+        Term::bv_const(BitVec::one(self.bv_len()))
     }
 
     #[inline]
     pub fn mk_bv_const_ones(&self) -> Term {
-        Term::bv_const(BvConst::ones(self.bv_len()))
+        Term::bv_const(BitVec::ones(self.bv_len()))
     }
 
     #[inline]
@@ -349,135 +349,9 @@ impl Deref for TermInner {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub enum TermType {
-    Const(BvConst),
+    Const(BitVec),
     Var(usize),
     Op(OpTerm),
-}
-
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct BvConst {
-    c: Vec<bool>,
-}
-
-impl BvConst {
-    #[inline]
-    pub fn new(c: &[bool]) -> Self {
-        Self { c: c.to_vec() }
-    }
-
-    #[inline]
-    pub fn zero(len: usize) -> Self {
-        Self {
-            c: vec![false; len],
-        }
-    }
-
-    #[inline]
-    pub fn one(len: usize) -> Self {
-        let mut c = vec![false; len];
-        c[0] = true;
-        Self { c }
-    }
-
-    #[inline]
-    pub fn ones(len: usize) -> Self {
-        Self { c: vec![true; len] }
-    }
-
-    #[inline]
-    pub fn is_zero(&self) -> bool {
-        self.c.iter().all(|x| !x)
-    }
-
-    #[inline]
-    pub fn is_one(&self) -> bool {
-        self.c[0] && self.c.iter().skip(1).all(|x| !*x)
-    }
-
-    #[inline]
-    pub fn is_ones(&self) -> bool {
-        self.c.iter().all(|x| *x)
-    }
-
-    #[inline]
-    #[allow(clippy::len_without_is_empty)]
-    pub fn len(&self) -> usize {
-        self.c.len()
-    }
-
-    pub fn bool(&self) -> Option<bool> {
-        if self.c.len() == 1 {
-            Some(self.c[0])
-        } else {
-            None
-        }
-    }
-
-    pub fn from_usize(mut v: usize, width: usize) -> Self {
-        let mut bv = Vec::new();
-        while v > 0 {
-            if bv.len() >= width {
-                break;
-            }
-            bv.push(v & 1 == 1);
-            v >>= 1;
-        }
-        while bv.len() < width {
-            bv.push(false);
-        }
-        bv.truncate(width);
-        Self::new(&bv)
-    }
-}
-
-impl Deref for BvConst {
-    type Target = [bool];
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.c
-    }
-}
-
-impl DerefMut for BvConst {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.c
-    }
-}
-
-impl Debug for BvConst {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let c: String = self
-            .c
-            .iter()
-            .map(|b| if *b { '1' } else { '0' })
-            .rev()
-            .collect();
-        write!(f, "BvConst({c:})")
-    }
-}
-
-impl From<&BvConst> for BitVec {
-    #[inline]
-    fn from(val: &BvConst) -> Self {
-        let mut res = BitVec::new();
-        for x in val.c.iter() {
-            res.push(*x);
-        }
-        res
-    }
-}
-
-impl ops::Not for &BvConst {
-    type Output = BvConst;
-
-    #[inline]
-    fn not(self) -> Self::Output {
-        let c = self.c.iter().map(|b| !b).collect();
-        BvConst { c }
-    }
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
