@@ -43,7 +43,7 @@ fn ordered_and_simplify(a: &Term, b: &Term) -> TermResult {
     if a == b {
         return TermResult::Some(a.clone());
     }
-    if a == &!b {
+    if a == !b {
         return TermResult::Some(a.mk_bv_const_zero());
     }
     if let Some(aop) = a.try_op() {
@@ -58,10 +58,10 @@ fn ordered_and_simplify(a: &Term, b: &Term) -> TermResult {
                     return TermResult::Some(&aop[0] & &aop[1] & &bop[0]);
                 }
             }
-            if b == &aop[0] {
+            if b == aop[0] {
                 return TermResult::Some(b & &aop[1]);
             }
-            if b == &aop[1] {
+            if b == aop[1] {
                 return TermResult::Some(b & &aop[0]);
             }
         }
@@ -127,15 +127,15 @@ fn or_simplify(terms: &[Term]) -> TermResult {
         if a == b {
             return TermResult::Some(a.clone());
         }
-        if a == &!b {
+        if a == !b {
             return TermResult::Some(a.mk_bv_const_ones());
         }
         if let Some(aop) = a.try_op() {
             if aop.op == Or {
-                if b == &aop[0] {
+                if b == aop[0] {
                     return TermResult::Some(b | &aop[1]);
                 }
-                if b == &aop[1] {
+                if b == aop[1] {
                     return TermResult::Some(b | &aop[0]);
                 }
             }
@@ -146,10 +146,10 @@ fn or_simplify(terms: &[Term]) -> TermResult {
                 return TermResult::Some(!(&aop[0] & &bop[0]));
             }
             if aop.op == Ite {
-                if b == &aop[0] {
+                if b == aop[0] {
                     return TermResult::Some(b | &aop[2]);
                 }
-                if b == &!&aop[0] {
+                if b == !&aop[0] {
                     return TermResult::Some(b | &aop[1]);
                 }
             }
@@ -202,7 +202,7 @@ fn xor_simplify(terms: &[Term]) -> TermResult {
         if a == b {
             return TermResult::Some(a.mk_bv_const_zero());
         }
-        if a == &!b {
+        if a == !b {
             return TermResult::Some(a.mk_bv_const_ones());
         }
         TermResult::None
@@ -232,7 +232,7 @@ fn eq_simplify(terms: &[Term]) -> TermResult {
         if a == b {
             return TermResult::Some(Term::bool_const(true));
         }
-        if a == &!b {
+        if a == !b {
             return TermResult::Some(Term::bool_const(false));
         }
         TermResult::None

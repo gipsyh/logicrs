@@ -245,6 +245,13 @@ impl<T: AsRef<Term>> PartialEq<T> for Term {
     }
 }
 
+impl PartialEq<Term> for &Term {
+    #[inline]
+    fn eq(&self, other: &Term) -> bool {
+        self.inner == other.inner
+    }
+}
+
 impl Eq for Term {}
 
 impl AsRef<Term> for Term {
