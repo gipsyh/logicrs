@@ -13,6 +13,7 @@ pub struct DagCnfSimplify {
     cdb: Grc<Gallocator<LitOrdVec>>,
     max_var: Var,
     cnf: LitMap<Vec<usize>>,
+    #[allow(clippy::type_complexity)]
     occur: Option<(Grc<Occurs<LitOrdVec>>, BinaryHeap<Var, Occurs<LitOrdVec>>)>,
     frozen: GHashSet<Var>,
     value: VarAssign,

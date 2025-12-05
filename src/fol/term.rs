@@ -5,7 +5,7 @@ use crate::fol::{TermVec, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::GHashMap;
-use lazy_static::lazy_static;
+use std::cell::UnsafeCell;
 use std::fmt::{self, Debug};
 use std::hash;
 use std::iter::once;
@@ -264,8 +264,8 @@ impl AsRef<Term> for Term {
 impl Drop for Term {
     #[inline]
     fn drop(&mut self) {
-        let g = self.clone();
-        tm().tgc.collect(g);
+        // let g = self.clone();
+        // tm().tgc.collect(g);
     }
 }
 
@@ -395,7 +395,7 @@ impl Index<usize> for OpTerm {
 
 #[derive(Clone, Default, PartialEq, Eq, Debug)]
 pub struct TermGC {
-    garbage: Grc<Vec<Term>>,
+    garbage: Vec<Term>,
 }
 
 impl TermGC {
@@ -405,14 +405,24 @@ impl TermGC {
     }
 }
 
-#[derive(Default)]
 struct TermManager {
-    tgc: TermGC,
+    _tgc: TermGC,
     avl_vid: usize,
     map: GHashMap<TermType, Term>,
 }
 
 impl TermManager {
+    #[inline]
+    fn new() -> Self {
+        Self {
+            _tgc: TermGC {
+                garbage: Vec::new(),
+            },
+            avl_vid: 0,
+            map: GHashMap::new(),
+        }
+    }
+
     #[inline]
     fn new_term(&mut self, ty: TermType, sort: Sort) -> Term {
         match self.map.get(&ty) {
@@ -443,10 +453,11 @@ impl TermManager {
     fn garbage_collect(&mut self) {}
 }
 
-lazy_static! {
-    static ref TERM_MANAGER: Grc<TermManager> = Grc::new(Default::default());
+thread_local! {
+    static TERM_MANAGER: UnsafeCell<TermManager> = UnsafeCell::new(TermManager::new());
 }
 
+#[inline]
 fn tm() -> &'static mut TermManager {
-    unsafe { TERM_MANAGER.get_mut_from_unmut() }
+    TERM_MANAGER.with(|m| unsafe { &mut *m.get() })
 }
