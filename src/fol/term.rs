@@ -87,6 +87,16 @@ impl Term {
     }
 
     #[inline]
+    pub fn is_var(&self) -> bool {
+        matches!(self.deref(), TermType::Var(_))
+    }
+
+    #[inline]
+    pub fn is_op(&self) -> bool {
+        matches!(self.deref(), TermType::Op(_))
+    }
+
+    #[inline]
     pub fn try_op(&self) -> Option<&OpTerm> {
         if let TermType::Op(op) = self.deref() {
             Some(op)
@@ -131,6 +141,11 @@ impl Term {
     #[inline]
     pub fn op2(&self, op: impl Into<DynOp>, x: &Term, y: &Term) -> Term {
         Self::new_op(op.into(), [self, x, y])
+    }
+
+    #[inline]
+    pub fn imply(&self, x: &Term) -> Term {
+        self.op1(op::Implies, x)
     }
 
     #[inline]
@@ -288,6 +303,15 @@ macro_rules! impl_unary_ops {
                 self.op0($op)
             }
         }
+
+        impl std::ops::$trait for &mut Term {
+            type Output = Term;
+
+            #[inline]
+            fn $method(self) -> Self::Output {
+                self.op0($op)
+            }
+        }
     };
 }
 
@@ -306,6 +330,15 @@ macro_rules! impl_biops {
         }
 
         impl<T: AsRef<Term>> std::ops::$trait<T> for &Term {
+            type Output = Term;
+
+            #[inline]
+            fn $method(self, rhs: T) -> Self::Output {
+                self.op1($op, rhs.as_ref())
+            }
+        }
+
+        impl<T: AsRef<Term>> std::ops::$trait<T> for &mut Term {
             type Output = Term;
 
             #[inline]
