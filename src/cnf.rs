@@ -41,9 +41,9 @@ impl Cnf {
     }
 
     #[inline]
-    pub fn add_clauses(&mut self, cls: impl Iterator<Item = LitVec>) {
+    pub fn add_clauses(&mut self, cls: impl IntoIterator<Item = impl AsRef<LitVec>>) {
         for cls in cls {
-            self.add_clause(&cls);
+            self.add_clause(cls.as_ref());
         }
     }
 
@@ -52,8 +52,13 @@ impl Cnf {
         &self.cls
     }
 
-    pub fn rearrange(&mut self, additional: impl Iterator<Item = Var>) -> VarVMap {
-        let mut domain = GHashSet::from_iter(additional.chain(once(Var::CONST)));
+    pub fn rearrange(&mut self, additional: impl IntoIterator<Item = impl AsRef<Var>>) -> VarVMap {
+        let mut domain = GHashSet::from_iter(
+            additional
+                .into_iter()
+                .map(|l| *l.as_ref())
+                .chain(once(Var::CONST)),
+        );
         for cls in self.cls.iter() {
             for l in cls.iter() {
                 domain.insert(l.var());

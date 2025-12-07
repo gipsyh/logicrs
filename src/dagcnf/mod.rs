@@ -128,16 +128,17 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn new_and(&mut self, ands: impl IntoIterator<Item = Lit>) -> Lit {
+    pub fn new_and(&mut self, ands: impl IntoIterator<Item = impl AsRef<Lit>>) -> Lit {
         let mut and = Vec::new();
         for a in ands.into_iter() {
+            let a = a.as_ref();
             if a.is_constant(true) {
                 continue;
             }
             if a.is_constant(false) {
                 return Lit::constant(false);
             }
-            and.push(a);
+            and.push(*a);
         }
         if and.is_empty() {
             Lit::constant(true)
@@ -151,16 +152,17 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn new_or(&mut self, ors: impl IntoIterator<Item = Lit>) -> Lit {
+    pub fn new_or(&mut self, ors: impl IntoIterator<Item = impl AsRef<Lit>>) -> Lit {
         let mut or = Vec::new();
         for o in ors.into_iter() {
+            let o = o.as_ref();
             if o.is_constant(false) {
                 continue;
             }
             if o.is_constant(true) {
                 return Lit::constant(true);
             }
-            or.push(o);
+            or.push(*o);
         }
         if or.is_empty() {
             Lit::constant(false)
@@ -201,10 +203,10 @@ impl DagCnf {
         n
     }
 
-    pub fn fanins(&self, var: impl Iterator<Item = Var>) -> GHashSet<Var> {
+    pub fn fanins(&self, var: impl IntoIterator<Item = impl AsRef<Var>>) -> GHashSet<Var> {
         let mut marked = GHashSet::new();
         let mut queue = vec![];
-        for v in var {
+        for v in var.into_iter().map(|v| *v.as_ref()) {
             marked.insert(v);
             queue.push(v);
         }
@@ -219,8 +221,8 @@ impl DagCnf {
         marked
     }
 
-    pub fn fanouts(&self, var: impl Iterator<Item = Var>) -> GHashSet<Var> {
-        let mut marked = GHashSet::from_iter(var);
+    pub fn fanouts(&self, var: impl IntoIterator<Item = impl AsRef<Var>>) -> GHashSet<Var> {
+        let mut marked = GHashSet::from_iter(var.into_iter().map(|v| *v.as_ref()));
         for v in Var::CONST..=self.max_var {
             if self.dep[v].iter().any(|d| marked.contains(d)) {
                 marked.insert(v);
@@ -241,15 +243,20 @@ impl DagCnf {
         root
     }
 
-    pub fn pol_filter(&mut self, pol: impl IntoIterator<Item = Lit>) {
-        for p in pol {
+    pub fn pol_filter(&mut self, pol: impl IntoIterator<Item = impl AsRef<Lit>>) {
+        for p in pol.into_iter().map(|l| *l.as_ref()) {
             self.cnf[p.var()].retain(|cls| cls.last() != !p);
             self.dep[p.var()] = deps(p.var(), &self.cnf[p.var()]);
         }
     }
 
-    pub fn rearrange(&mut self, additional: impl Iterator<Item = Var>) -> VarVMap {
-        let mut domain = GHashSet::from_iter(additional.chain(once(Var::CONST)));
+    pub fn rearrange(&mut self, additional: impl IntoIterator<Item = impl AsRef<Var>>) -> VarVMap {
+        let mut domain = GHashSet::from_iter(
+            additional
+                .into_iter()
+                .map(|l| *l.as_ref())
+                .chain(once(Var::CONST)),
+        );
         for cls in self.clause() {
             for l in cls.iter() {
                 domain.insert(l.var());

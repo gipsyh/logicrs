@@ -85,6 +85,20 @@ impl Deref for Var {
     }
 }
 
+impl AsRef<Var> for Var {
+    #[inline]
+    fn as_ref(&self) -> &Var {
+        self
+    }
+}
+
+impl AsMut<Var> for Var {
+    #[inline]
+    fn as_mut(&mut self) -> &mut Var {
+        self
+    }
+}
+
 impl Display for Var {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -271,6 +285,20 @@ impl Not for Lit {
     #[inline]
     fn not(mut self) -> Self::Output {
         self.0 ^= 1;
+        self
+    }
+}
+
+impl AsRef<Lit> for Lit {
+    #[inline]
+    fn as_ref(&self) -> &Lit {
+        self
+    }
+}
+
+impl AsMut<Lit> for Lit {
+    #[inline]
+    fn as_mut(&mut self) -> &mut Lit {
         self
     }
 }

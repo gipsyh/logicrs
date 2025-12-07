@@ -59,17 +59,17 @@ impl Term {
     }
 }
 
-pub fn bitblast_terms<'a, I: IntoIterator<Item = &'a Term>>(
+pub fn bitblast_terms<I: IntoIterator<Item = impl AsRef<Term>>>(
     terms: I,
     map: &mut GHashMap<Term, TermVec>,
 ) -> impl Iterator<Item = TermVec> {
-    terms.into_iter().map(|t| t.bitblast(map))
+    terms.into_iter().map(|t| t.as_ref().bitblast(map))
 }
 
-pub fn cnf_encode_terms<'a, I: IntoIterator<Item = &'a Term>>(
+pub fn cnf_encode_terms<I: IntoIterator<Item = impl AsRef<Term>>>(
     terms: I,
     dc: &mut DagCnf,
     map: &mut GHashMap<Term, Lit>,
 ) -> impl Iterator<Item = Lit> {
-    terms.into_iter().map(|t| t.cnf_encode(dc, map))
+    terms.into_iter().map(|t| t.as_ref().cnf_encode(dc, map))
 }

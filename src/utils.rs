@@ -634,9 +634,13 @@ impl VarSymbols {
         res
     }
 
-    pub fn lits_symbols(&self, lits: impl IntoIterator<Item = Lit>) -> Vec<SymbolAssign> {
+    pub fn lits_symbols(
+        &self,
+        lits: impl IntoIterator<Item = impl AsRef<Lit>>,
+    ) -> Vec<SymbolAssign> {
         let mut res: GHashMap<String, LboolVec> = GHashMap::new();
         lits.into_iter().for_each(|l| {
+            let l = *l.as_ref();
             let symbols = self.get(l.var());
             for (s, idx) in symbols {
                 let lbool_vec = res.entry(s).or_default();
