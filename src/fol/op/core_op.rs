@@ -1002,7 +1002,7 @@ fn write_bitblast(terms: &[TermVec]) -> TermVec {
     for i in 0..element_len {
         for j in 0..index_range {
             let r = &mut res[element_len * j + i];
-            *r = onehot[j].ite(&value[i], r);
+            *r = onehot[j].ite(&value[i], &r);
         }
     }
     res

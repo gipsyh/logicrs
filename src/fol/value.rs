@@ -42,7 +42,7 @@ impl BvTermValue {
     /// Eq Term
     #[inline]
     pub fn teq(&self) -> Term {
-        self.t.teq(&Term::bv_const(self.v.clone()))
+        self.t.teq(Term::bv_const(self.v.clone()))
     }
 }
 

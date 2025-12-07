@@ -58,14 +58,14 @@ impl Term {
     }
 
     #[inline]
-    pub fn new_op_elementwise<'a>(
+    pub fn new_op_elementwise(
         op: impl Into<DynOp> + Copy,
-        x: impl IntoIterator<Item = &'a Term>,
-        y: impl IntoIterator<Item = &'a Term>,
+        x: impl IntoIterator<Item = impl AsRef<Term>>,
+        y: impl IntoIterator<Item = impl AsRef<Term>>,
     ) -> TermVec {
         x.into_iter()
             .zip(y)
-            .map(|(x, y)| Self::new_op(op, [x, y]))
+            .map(|(x, y)| Self::new_op(op, [x.as_ref(), y.as_ref()]))
             .collect()
     }
 }
@@ -134,17 +134,17 @@ impl Term {
     }
 
     #[inline]
-    pub fn op1(&self, op: impl Into<DynOp>, x: &Term) -> Term {
-        Self::new_op(op.into(), [self, x])
+    pub fn op1(&self, op: impl Into<DynOp>, x: impl AsRef<Term>) -> Term {
+        Self::new_op(op.into(), [self, x.as_ref()])
     }
 
     #[inline]
-    pub fn op2(&self, op: impl Into<DynOp>, x: &Term, y: &Term) -> Term {
-        Self::new_op(op.into(), [self, x, y])
+    pub fn op2(&self, op: impl Into<DynOp>, x: impl AsRef<Term>, y: impl AsRef<Term>) -> Term {
+        Self::new_op(op.into(), [self, x.as_ref(), y.as_ref()])
     }
 
     #[inline]
-    pub fn imply(&self, x: &Term) -> Term {
+    pub fn imply(&self, x: impl AsRef<Term>) -> Term {
         self.op1(op::Implies, x)
     }
 
@@ -154,7 +154,7 @@ impl Term {
     }
 
     #[inline]
-    pub fn ite(&self, t: &Term, e: &Term) -> Term {
+    pub fn ite(&self, t: impl AsRef<Term>, e: impl AsRef<Term>) -> Term {
         self.op2(Ite, t, e)
     }
 
@@ -166,19 +166,19 @@ impl Term {
     }
 
     #[inline]
-    pub fn concat(&self, o: &Term) -> Term {
+    pub fn concat(&self, o: impl AsRef<Term>) -> Term {
         self.op1(Concat, o)
     }
 
     /// Term Eq, different from PartialEq trait
     #[inline]
-    pub fn teq(&self, o: &Term) -> Term {
+    pub fn teq(&self, o: impl AsRef<Term>) -> Term {
         self.op1(op::Eq, o)
     }
 
     /// Term Neq, different from PartialEq trait
     #[inline]
-    pub fn tneq(&self, o: &Term) -> Term {
+    pub fn tneq(&self, o: impl AsRef<Term>) -> Term {
         self.op1(op::Neq, o)
     }
 
