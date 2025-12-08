@@ -176,14 +176,36 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn new_xor(&mut self, x: Lit, y: Lit) -> Lit {
+    pub fn new_xor(&mut self, mut x: Lit, mut y: Lit) -> Lit {
+        if x.var() == y.var() {
+            return Lit::constant(x != y);
+        }
+        if x.var() > y.var() {
+            (x, y) = (y, x);
+        }
+        if x.is_constant(true) {
+            return !y;
+        } else if x.is_constant(false) {
+            return y;
+        }
         let n = self.new_var().lit();
         self.add_rel(n.var(), &LitVvec::cnf_xor(n, x, y));
         n
     }
 
     #[inline]
-    pub fn new_xnor(&mut self, x: Lit, y: Lit) -> Lit {
+    pub fn new_xnor(&mut self, mut x: Lit, mut y: Lit) -> Lit {
+        if x.var() == y.var() {
+            return Lit::constant(x == y);
+        }
+        if x.var() > y.var() {
+            (x, y) = (y, x);
+        }
+        if x.is_constant(true) {
+            return y;
+        } else if x.is_constant(false) {
+            return !y;
+        }
         let n = self.new_var().lit();
         self.add_rel(n.var(), &LitVvec::cnf_xnor(n, x, y));
         n
