@@ -79,4 +79,18 @@ impl TermValue {
             TermValue::Array(t) => &t.t,
         }
     }
+
+    pub fn try_bv(&self) -> Option<BvTermValue> {
+        match self {
+            TermValue::Bv(bv) => Some(bv.clone()),
+            _ => None,
+        }
+    }
+
+    pub fn try_array(&self) -> Option<ArrayTermValue> {
+        match self {
+            TermValue::Array(a) => Some(a.clone()),
+            _ => None,
+        }
+    }
 }
