@@ -1,7 +1,7 @@
 use crate::{Lit, LitVec, Var};
 use std::time::Duration;
 
-pub trait Satif {
+pub trait Satif: Send {
     fn new_var(&mut self) -> Var;
 
     fn new_var_to(&mut self, var: Var) {
