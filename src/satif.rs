@@ -60,4 +60,8 @@ pub trait Satif: Send {
     fn set_seed(&mut self, _seed: u64) {
         panic!("unsupport set seed");
     }
+
+    fn flip_to_none(&mut self, _var: Var) -> bool {
+        panic!("unsupport flip to none");
+    }
 }
