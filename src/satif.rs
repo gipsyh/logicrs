@@ -62,6 +62,6 @@ pub trait Satif: Send {
     }
 
     fn flip_to_none(&mut self, _var: Var) -> bool {
-        panic!("unsupport flip to none");
+        false
     }
 }
