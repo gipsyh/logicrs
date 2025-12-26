@@ -1,7 +1,8 @@
 use crate::fol::{Sort, Term};
+use enum_as_inner::EnumAsInner;
 use giputils::{bitvec::BitVec, hash::GHashMap};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, EnumAsInner)]
 pub enum Value {
     Bv(BitVec),
     Array(GHashMap<usize, BitVec>),
@@ -65,7 +66,7 @@ impl ArrayTermValue {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, EnumAsInner)]
 pub enum TermValue {
     Bv(BvTermValue),
     Array(ArrayTermValue),
@@ -73,24 +74,18 @@ pub enum TermValue {
 
 impl TermValue {
     #[inline]
+    pub fn new(t: Term, v: Value) -> Self {
+        match v {
+            Value::Bv(v) => TermValue::Bv(BvTermValue { t, v }),
+            Value::Array(v) => TermValue::Array(ArrayTermValue { t, v }),
+        }
+    }
+
+    #[inline]
     pub fn t(&self) -> &Term {
         match self {
             TermValue::Bv(t) => &t.t,
             TermValue::Array(t) => &t.t,
-        }
-    }
-
-    pub fn try_bv(&self) -> Option<BvTermValue> {
-        match self {
-            TermValue::Bv(bv) => Some(bv.clone()),
-            _ => None,
-        }
-    }
-
-    pub fn try_array(&self) -> Option<ArrayTermValue> {
-        match self {
-            TermValue::Array(a) => Some(a.clone()),
-            _ => None,
         }
     }
 }
