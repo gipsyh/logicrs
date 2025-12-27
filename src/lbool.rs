@@ -409,3 +409,22 @@ macro_rules! impl_lboolvec_op {
 impl_lboolvec_op!(BitAnd, bitand, BitAndAssign, bitand_assign);
 impl_lboolvec_op!(BitOr, bitor, BitOrAssign, bitor_assign);
 impl_lboolvec_op!(BitXor, bitxor, BitXorAssign, bitxor_assign);
+
+impl Not for LboolVec {
+    type Output = LboolVec;
+
+    fn not(mut self) -> Self::Output {
+        self.v = !&self.v;
+        self
+    }
+}
+
+impl Not for &LboolVec {
+    type Output = LboolVec;
+
+    fn not(self) -> Self::Output {
+        let mut res = self.clone();
+        res.v = !&self.v;
+        res
+    }
+}
