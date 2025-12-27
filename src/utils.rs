@@ -496,10 +496,24 @@ impl VarVMap {
         }
     }
 
+    pub fn map_value(&mut self, map: impl Fn(Var) -> Var) {
+        for (k, v) in take(&mut self.map) {
+            self.insert(k, map(v));
+        }
+    }
+
     pub fn filter_map_key(&mut self, map: impl Fn(Var) -> Option<Var>) {
         for (k, v) in take(&mut self.map) {
             if let Some(n) = map(k) {
                 self.insert(n, v);
+            }
+        }
+    }
+
+    pub fn filter_map_value(&mut self, map: impl Fn(Var) -> Option<Var>) {
+        for (k, v) in take(&mut self.map) {
+            if let Some(n) = map(v) {
+                self.insert(k, n);
             }
         }
     }
