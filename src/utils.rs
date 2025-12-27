@@ -1,4 +1,4 @@
-use crate::{Lbool, LboolVec, Lit, Var};
+use crate::{LboolVec, Lit, Var};
 use giputils::hash::GHashMap;
 use std::{
     fmt::{self, Debug, Display},
@@ -571,31 +571,7 @@ pub struct SymbolAssign {
 impl Debug for SymbolAssign {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut assign = self.assign.clone();
-        while let Some(last) = assign.last() {
-            if last.is_none() {
-                assign.pop();
-            } else {
-                break;
-            }
-        }
-        let h = self.assign.len() - 1;
-        let mut l = 0;
-        assign.reverse();
-        while let Some(last) = assign.last() {
-            if last.is_none() {
-                assign.pop();
-                l += 1;
-            } else {
-                break;
-            }
-        }
-        assign.reverse();
-        if l == h {
-            write!(f, "{}[{l}] = {assign}", self.symbol)
-        } else {
-            write!(f, "{}[{h}:{l}] = {assign}", self.symbol)
-        }
+        write!(f, "{} = {}", self.symbol, self.assign)
     }
 }
 
@@ -632,26 +608,5 @@ impl VarSymbols {
             }
         }
         res
-    }
-
-    pub fn lits_symbols(
-        &self,
-        lits: impl IntoIterator<Item = impl AsRef<Lit>>,
-    ) -> Vec<SymbolAssign> {
-        let mut res: GHashMap<String, LboolVec> = GHashMap::new();
-        lits.into_iter().for_each(|l| {
-            let l = *l.as_ref();
-            let symbols = self.get(l.var());
-            for (s, idx) in symbols {
-                let lbool_vec = res.entry(s).or_default();
-                while lbool_vec.len() <= idx {
-                    lbool_vec.push(Lbool::NONE);
-                }
-                lbool_vec[idx] = Lbool::from(l.polarity());
-            }
-        });
-        res.into_iter()
-            .map(|(symbol, assign)| SymbolAssign { symbol, assign })
-            .collect()
     }
 }

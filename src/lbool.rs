@@ -1,6 +1,7 @@
+use giputils::bitvec::BitVec;
 use std::{
     fmt::{self, Debug, Display, Write},
-    ops::{BitAnd, BitOr, Deref, DerefMut, Not},
+    ops::{BitAnd, BitOr, Not},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -131,40 +132,214 @@ impl BitOr for Lbool {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub struct LboolVec {
-    v: Vec<Lbool>,
+    v: BitVec,
+    m: BitVec,
 }
 
-impl Deref for LboolVec {
-    type Target = Vec<Lbool>;
+impl LboolVec {
+    #[inline]
+    pub fn from_elem(v: Lbool, len: usize) -> Self {
+        Self {
+            v: BitVec::from_elem(len, v.is_true()),
+            m: BitVec::from_elem(len, !v.is_none()),
+        }
+    }
 
     #[inline]
-    fn deref(&self) -> &Self::Target {
+    pub fn len(&self) -> usize {
+        self.v.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    #[inline]
+    pub fn v(&self) -> &BitVec {
         &self.v
     }
-}
 
-impl DerefMut for LboolVec {
     #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.v
+    pub fn mask(&self) -> &BitVec {
+        &self.m
+    }
+
+    #[inline]
+    pub fn get_masked(&self) -> BitVec {
+        &self.v & &self.m
+    }
+
+    #[inline]
+    pub fn set(&mut self, idx: usize, v: Lbool) {
+        self.m.set(idx, !v.is_none());
+        self.v.set(idx, v.is_true());
+    }
+
+    #[inline]
+    pub fn set_bool(&mut self, idx: usize, v: bool) {
+        self.m.set(idx, true);
+        self.v.set(idx, v);
     }
 }
 
-impl Debug for LboolVec {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for lb in self.v.iter().rev() {
-            Debug::fmt(lb, f)?;
+impl PartialEq for LboolVec {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
         }
-        Ok(())
+        if self.m != other.m {
+            return false;
+        }
+        self.get_masked() == other.get_masked()
+    }
+}
+
+impl Eq for LboolVec {}
+
+impl Debug for LboolVec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_empty() {
+            return write!(f, "[]");
+        }
+        let mut s = String::with_capacity(self.len());
+        for i in (0..self.len()).rev() {
+            if !self.m.get(i) {
+                s.push('x');
+            } else if self.v.get(i) {
+                s.push('1');
+            } else {
+                s.push('0');
+            }
+        }
+        write!(f, "{s}")
     }
 }
 
 impl Display for LboolVec {
-    #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+impl fmt::Binary for LboolVec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(&self, f)
+    }
+}
+
+impl From<&str> for LboolVec {
+    #[inline]
+    fn from(value: &str) -> Self {
+        let mut v = BitVec::new();
+        let mut m = BitVec::new();
+        for c in value.chars().rev() {
+            match c {
+                '1' => {
+                    v.push(true);
+                    m.push(true);
+                }
+                '0' => {
+                    v.push(false);
+                    m.push(true);
+                }
+                'x' | 'X' => {
+                    v.push(false);
+                    m.push(false);
+                }
+                _ => panic!("Invalid character in lbool string"),
+            }
+        }
+        Self { v, m }
+    }
+}
+
+impl From<BitVec> for LboolVec {
+    fn from(v: BitVec) -> Self {
+        Self {
+            m: BitVec::from_elem(v.len(), true),
+            v,
+        }
+    }
+}
+
+impl LboolVec {
+    pub fn iter(&self) -> Iter<'_> {
+        debug_assert_eq!(self.v.len(), self.m.len());
+        Iter {
+            v: &self.v,
+            m: &self.m,
+            start: 0,
+            end: self.len(),
+        }
+    }
+}
+
+pub struct Iter<'a> {
+    v: &'a BitVec,
+    m: &'a BitVec,
+    start: usize,
+    end: usize,
+}
+
+impl<'a> Iterator for Iter<'a> {
+    type Item = Lbool;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start < self.end {
+            let idx = self.start;
+            self.start += 1;
+            debug_assert_eq!(self.v.len(), self.m.len());
+            if !self.m.get(idx) {
+                Some(Lbool::NONE)
+            } else if self.v.get(idx) {
+                Some(Lbool::TRUE)
+            } else {
+                Some(Lbool::FALSE)
+            }
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let len = self.end - self.start;
+        (len, Some(len))
+    }
+}
+
+impl<'a> DoubleEndedIterator for Iter<'a> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        if self.start < self.end {
+            self.end -= 1;
+            let idx = self.end;
+            debug_assert_eq!(self.v.len(), self.m.len());
+            if !self.m.get(idx) {
+                Some(Lbool::NONE)
+            } else if self.v.get(idx) {
+                Some(Lbool::TRUE)
+            } else {
+                Some(Lbool::FALSE)
+            }
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> ExactSizeIterator for Iter<'a> {}
+
+impl<'a> IntoIterator for &'a LboolVec {
+    type Item = Lbool;
+    type IntoIter = Iter<'a>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }
