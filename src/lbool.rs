@@ -1,11 +1,11 @@
 use giputils::bitvec::BitVec;
 use std::{
     fmt::{self, Debug, Display, Write},
-    ops::{BitAnd, BitOr, Not},
+    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub struct Lbool(pub u8);
+pub struct Lbool(pub(crate) u8);
 
 impl Lbool {
     pub const FALSE: Lbool = Lbool(0);
@@ -91,20 +91,12 @@ impl BitAnd for Lbool {
 
     #[inline]
     fn bitand(self, rhs: Self) -> Self::Output {
-        if self.is_none() {
-            if rhs.is_false() {
-                Self::FALSE
-            } else {
-                Self::NONE
-            }
-        } else if rhs.is_none() {
-            if self.is_false() {
-                Self::FALSE
-            } else {
-                Self::NONE
-            }
+        if self.is_false() || rhs.is_false() {
+            Self::FALSE
+        } else if self.is_none() || rhs.is_none() {
+            Self::NONE
         } else {
-            Self(self.0 & rhs.0)
+            Self::TRUE
         }
     }
 }
@@ -114,20 +106,25 @@ impl BitOr for Lbool {
 
     #[inline]
     fn bitor(self, rhs: Self) -> Self::Output {
-        if self.is_none() {
-            if rhs.is_true() {
-                Self::TRUE
-            } else {
-                Self::NONE
-            }
-        } else if rhs.is_none() {
-            if self.is_true() {
-                Self::TRUE
-            } else {
-                Self::NONE
-            }
+        if self.is_true() || rhs.is_true() {
+            Self::TRUE
+        } else if self.is_none() || rhs.is_none() {
+            Self::NONE
         } else {
-            Self(self.0 | rhs.0)
+            Self::FALSE
+        }
+    }
+}
+
+impl BitXor for Lbool {
+    type Output = Lbool;
+
+    #[inline]
+    fn bitxor(self, rhs: Self) -> Self::Output {
+        if self.is_none() || rhs.is_none() {
+            Self::NONE
+        } else {
+            Self(self.0 ^ rhs.0)
         }
     }
 }
@@ -170,6 +167,15 @@ impl LboolVec {
     #[inline]
     pub fn get_masked(&self) -> BitVec {
         &self.v & &self.m
+    }
+
+    #[inline]
+    pub fn get(&self, idx: usize) -> Lbool {
+        if !self.m.get(idx) {
+            Lbool::NONE
+        } else {
+            Lbool::from(self.v.get(idx))
+        }
     }
 
     #[inline]
@@ -343,3 +349,63 @@ impl<'a> IntoIterator for &'a LboolVec {
         self.iter()
     }
 }
+
+macro_rules! impl_lboolvec_op {
+    ($trait:ident, $method:ident, $assign_trait:ident, $assign_method:ident) => {
+        impl $trait<&LboolVec> for &LboolVec {
+            type Output = LboolVec;
+
+            fn $method(self, rhs: &LboolVec) -> Self::Output {
+                assert_eq!(self.len(), rhs.len());
+                let mut res = LboolVec::from_elem(Lbool::NONE, self.len());
+                for i in 0..self.len() {
+                    res.set(i, self.get(i).$method(rhs.get(i)));
+                }
+                res
+            }
+        }
+
+        impl $trait<LboolVec> for &LboolVec {
+            type Output = LboolVec;
+
+            fn $method(self, rhs: LboolVec) -> Self::Output {
+                self.$method(&rhs)
+            }
+        }
+
+        impl $trait<&LboolVec> for LboolVec {
+            type Output = LboolVec;
+
+            fn $method(self, rhs: &LboolVec) -> Self::Output {
+                (&self).$method(rhs)
+            }
+        }
+
+        impl $trait<LboolVec> for LboolVec {
+            type Output = LboolVec;
+
+            fn $method(self, rhs: LboolVec) -> Self::Output {
+                (&self).$method(&rhs)
+            }
+        }
+
+        impl $assign_trait<&LboolVec> for LboolVec {
+            fn $assign_method(&mut self, rhs: &LboolVec) {
+                assert_eq!(self.len(), rhs.len());
+                for i in 0..self.len() {
+                    self.set(i, self.get(i).$method(rhs.get(i)));
+                }
+            }
+        }
+
+        impl $assign_trait<LboolVec> for LboolVec {
+            fn $assign_method(&mut self, rhs: LboolVec) {
+                self.$assign_method(&rhs)
+            }
+        }
+    };
+}
+
+impl_lboolvec_op!(BitAnd, bitand, BitAndAssign, bitand_assign);
+impl_lboolvec_op!(BitOr, bitor, BitOrAssign, bitor_assign);
+impl_lboolvec_op!(BitXor, bitxor, BitXorAssign, bitxor_assign);
