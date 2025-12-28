@@ -1,4 +1,4 @@
-use crate::{Cnf, CstDagCnf, DagCnf, Lit, LitMap, LitOrdVec, LitVec, Var, occur::Occurs};
+use crate::{Cnf, CstDagCnf, DagCnf, Lit, LitMap, LitOrdVec, LitVec, Var, VarRange, occur::Occurs};
 use giputils::{allocator::Gallocator, grc::Grc};
 use std::{
     cmp::Ordering,
@@ -69,7 +69,7 @@ impl BVA {
 
     pub fn bva(mut self) -> CstDagCnf {
         let mut queue = BinaryHeap::new();
-        for v in Var::CONST..=self.dc.max_var() {
+        for v in VarRange::new_inclusive(Var::CONST, self.dc.max_var()) {
             let l = v.lit();
             queue.push(QueueElement(l, self.lit_count(l)));
             queue.push(QueueElement(!l, self.lit_count(!l)));
@@ -175,7 +175,7 @@ impl BVA {
         }
 
         let mut cst = Cnf::new();
-        for v in Var(1)..=self.dc.max_var() {
+        for v in VarRange::new_inclusive(Var(1), self.dc.max_var()) {
             let mut cls = self.occur.get(v.lit()).to_vec();
             cls.extend(self.occur.get(!v.lit()).iter().copied());
             cls.into_iter().for_each(|cls| {

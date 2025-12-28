@@ -1,4 +1,4 @@
-use crate::{LboolVec, Lit, Var};
+use crate::{LboolVec, Lit, Var, VarRange};
 use giputils::hash::GHashMap;
 use std::{
     fmt::{self, Debug, Display},
@@ -451,7 +451,7 @@ impl VarVMap {
     #[inline]
     pub fn new_self_map(v: Var) -> Self {
         let mut res = VarVMap::new();
-        for v in Var::CONST..=v {
+        for v in VarRange::new_inclusive(Var::CONST, v) {
             res.insert(v, v);
         }
         res

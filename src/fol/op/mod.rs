@@ -42,7 +42,7 @@ pub trait Op: Debug + 'static {
     }
 
     fn simplify(&self, _terms: &[Term]) -> TermResult {
-        TermResult::None
+        None
     }
 
     fn bitblast(&self, _terms: &[TermVec]) -> TermVec {

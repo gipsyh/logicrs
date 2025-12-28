@@ -2,12 +2,12 @@ pub mod simplify;
 pub mod simulate;
 mod top;
 
-use crate::{Lit, LitVec, LitVvec, Var, VarLMap, VarMap, VarVMap};
+use crate::{Lit, LitVec, LitVvec, Var, VarLMap, VarMap, VarRange, VarVMap};
 use giputils::hash::GHashSet;
 use std::{
     fmt::Display,
     iter::{Flatten, Zip, once},
-    ops::{Index, RangeInclusive},
+    ops::Index,
     slice,
 };
 
@@ -57,14 +57,14 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn var_iter(&self) -> RangeInclusive<Var> {
-        Var::CONST..=self.max_var
+    pub fn var_iter(&self) -> VarRange {
+        VarRange::new_inclusive(Var::CONST, self.max_var)
     }
 
     /// var iter wo const
     #[inline]
-    pub fn var_iter_woc(&self) -> RangeInclusive<Var> {
-        Var(1)..=self.max_var
+    pub fn var_iter_woc(&self) -> VarRange {
+        VarRange::new_inclusive(Var(1), self.max_var)
     }
 
     #[inline]
@@ -83,8 +83,8 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn iter(&self) -> Zip<RangeInclusive<Var>, std::slice::Iter<'_, LitVvec>> {
-        (Var::CONST..=self.max_var).zip(self.cnf.iter())
+    pub fn iter(&self) -> Zip<VarRange, std::slice::Iter<'_, LitVvec>> {
+        VarRange::new_inclusive(Var::CONST, self.max_var).zip(self.cnf.iter())
     }
 
     #[inline]
@@ -245,7 +245,7 @@ impl DagCnf {
 
     pub fn fanouts(&self, var: impl IntoIterator<Item = impl AsRef<Var>>) -> GHashSet<Var> {
         let mut marked = GHashSet::from_iter(var.into_iter().map(|v| *v.as_ref()));
-        for v in Var::CONST..=self.max_var {
+        for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
             if self.dep[v].iter().any(|d| marked.contains(d)) {
                 marked.insert(v);
             }
@@ -255,7 +255,8 @@ impl DagCnf {
 
     pub fn root(&self) -> GHashSet<Var> {
         let mut root = GHashSet::from_iter(
-            (Var::new(0)..=self.max_var()).filter(|v| !self.dep[*v].is_empty()),
+            VarRange::new_inclusive(Var::CONST, self.max_var())
+                .filter(|v| !self.dep[*v].is_empty()),
         );
         for d in self.dep.iter() {
             for d in d.iter() {
@@ -323,7 +324,7 @@ impl DagCnf {
             assert!(*old > new.var());
         }
 
-        for v in Var::CONST..=self.max_var {
+        for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
             if map.contains_key(&v) {
                 self.cnf[v].clear();
                 self.dep[v].clear();

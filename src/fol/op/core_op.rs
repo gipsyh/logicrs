@@ -15,12 +15,12 @@ fn not_simplify(terms: &[Term]) -> TermResult {
     if let Some(op) = x.try_op()
         && op.op == Not
     {
-        return TermResult::Some(op[0].clone());
+        return Some(op[0].clone());
     }
     if let Some(xc) = x.try_bv_const() {
-        return TermResult::Some(Term::bv_const(!xc));
+        return Some(Term::bv_const(!xc));
     }
-    TermResult::None
+    None
 }
 fn not_bitblast(terms: &[TermVec]) -> TermVec {
     terms[0].iter().map(|t| !t).collect()
@@ -34,17 +34,17 @@ define_core_op!(And, 2, bitblast: and_bitblast, cnf_encode: and_cnf_encode, simp
 fn ordered_and_simplify(a: &Term, b: &Term) -> TermResult {
     if let Some(ac) = a.try_bv_const() {
         if ac.is_ones() {
-            return TermResult::Some(b.clone());
+            return Some(b.clone());
         }
         if ac.is_zero() {
-            return TermResult::Some(a.clone());
+            return Some(a.clone());
         }
     }
     if a == b {
-        return TermResult::Some(a.clone());
+        return Some(a.clone());
     }
     if a == !b {
-        return TermResult::Some(a.mk_bv_const_zero());
+        return Some(a.mk_bv_const_zero());
     }
     if let Some(aop) = a.try_op() {
         if aop.op == And {
@@ -52,42 +52,42 @@ fn ordered_and_simplify(a: &Term, b: &Term) -> TermResult {
                 && bop.op == And
             {
                 if aop[0] == bop[0] {
-                    return TermResult::Some(&aop[0] & &aop[1] & &bop[1]);
+                    return Some(&aop[0] & &aop[1] & &bop[1]);
                 }
                 if aop[0] == bop[1] {
-                    return TermResult::Some(&aop[0] & &aop[1] & &bop[0]);
+                    return Some(&aop[0] & &aop[1] & &bop[0]);
                 }
             }
             if b == aop[0] {
-                return TermResult::Some(b & &aop[1]);
+                return Some(b & &aop[1]);
             }
             if b == aop[1] {
-                return TermResult::Some(b & &aop[0]);
+                return Some(b & &aop[0]);
             }
         }
         if aop.op == Not
             && let Some(bop) = b.try_op()
             && bop.op == Not
         {
-            return TermResult::Some(!(&aop[0] | &bop[0]));
+            return Some(!(&aop[0] | &bop[0]));
         }
         if aop.op == Or {
             if aop[0] == b || aop[1] == b {
-                return TermResult::Some(b.clone());
+                return Some(b.clone());
             }
             if let Some(bop) = b.try_op()
                 && bop.op == Or
             {
                 if aop[0] == bop[0] {
-                    return TermResult::Some(&aop[0] | (&aop[1] & &bop[1]));
+                    return Some(&aop[0] | (&aop[1] & &bop[1]));
                 }
                 if aop[0] == bop[1] {
-                    return TermResult::Some(&aop[0] | (&aop[1] & &bop[0]));
+                    return Some(&aop[0] | (&aop[1] & &bop[0]));
                 }
             }
         }
     }
-    TermResult::None
+    None
 }
 fn and_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
@@ -118,39 +118,39 @@ fn or_simplify(terms: &[Term]) -> TermResult {
     let simp = |a: &Term, b: &Term| {
         if let Some(ac) = a.try_bv_const() {
             if ac.is_ones() {
-                return TermResult::Some(a.clone());
+                return Some(a.clone());
             }
             if ac.is_zero() {
-                return TermResult::Some(b.clone());
+                return Some(b.clone());
             }
         }
         if a == b {
-            return TermResult::Some(a.clone());
+            return Some(a.clone());
         }
         if a == !b {
-            return TermResult::Some(a.mk_bv_const_ones());
+            return Some(a.mk_bv_const_ones());
         }
         if let Some(aop) = a.try_op() {
             if aop.op == Or {
                 if b == aop[0] {
-                    return TermResult::Some(b | &aop[1]);
+                    return Some(b | &aop[1]);
                 }
                 if b == aop[1] {
-                    return TermResult::Some(b | &aop[0]);
+                    return Some(b | &aop[0]);
                 }
             }
             if aop.op == Not
                 && let Some(bop) = b.try_op()
                 && bop.op == Not
             {
-                return TermResult::Some(!(&aop[0] & &bop[0]));
+                return Some(!(&aop[0] & &bop[0]));
             }
             if aop.op == Ite {
                 if b == aop[0] {
-                    return TermResult::Some(b | &aop[2]);
+                    return Some(b | &aop[2]);
                 }
                 if b == !&aop[0] {
-                    return TermResult::Some(b | &aop[1]);
+                    return Some(b | &aop[1]);
                 }
             }
             if aop.op == And
@@ -158,14 +158,14 @@ fn or_simplify(terms: &[Term]) -> TermResult {
                 && bop.op == And
             {
                 if aop[0] == bop[0] {
-                    return TermResult::Some(&aop[0] & (&aop[1] | &bop[1]));
+                    return Some(&aop[0] & (&aop[1] | &bop[1]));
                 }
                 if aop[0] == bop[1] {
-                    return TermResult::Some(&aop[0] & (&aop[1] | &bop[0]));
+                    return Some(&aop[0] & (&aop[1] | &bop[0]));
                 }
             }
         }
-        TermResult::None
+        None
     };
     simp(x, y)?;
     simp(y, x)
@@ -193,19 +193,19 @@ fn xor_simplify(terms: &[Term]) -> TermResult {
     let simp = |a: &Term, b: &Term| {
         if let Some(ac) = a.try_bv_const() {
             if ac.is_ones() {
-                return TermResult::Some(!b.clone());
+                return Some(!b.clone());
             }
             if ac.is_zero() {
-                return TermResult::Some(b.clone());
+                return Some(b.clone());
             }
         }
         if a == b {
-            return TermResult::Some(a.mk_bv_const_zero());
+            return Some(a.mk_bv_const_zero());
         }
         if a == !b {
-            return TermResult::Some(a.mk_bv_const_ones());
+            return Some(a.mk_bv_const_ones());
         }
-        TermResult::None
+        None
     };
     simp(x, y)?;
     simp(y, x)
@@ -225,17 +225,17 @@ fn eq_simplify(terms: &[Term]) -> TermResult {
     let y = &terms[1];
     let simp = |a: &Term, b: &Term| {
         if a.is_bool()
-            && let TermResult::Some(s) = xor_simplify(terms)
+            && let Some(s) = xor_simplify(terms)
         {
-            return TermResult::Some(!s);
+            return Some(!s);
         }
         if a == b {
-            return TermResult::Some(Term::bool_const(true));
+            return Some(Term::bool_const(true));
         }
         if a == !b {
-            return TermResult::Some(Term::bool_const(false));
+            return Some(Term::bool_const(false));
         }
-        TermResult::None
+        None
     };
     simp(x, y)?;
     simp(y, x)
@@ -257,21 +257,21 @@ fn ult_simplify(terms: &[Term]) -> TermResult {
     let y = &terms[1];
     if let Some(xc) = x.try_bv_const() {
         if xc.is_zero() {
-            return TermResult::Some(!x.op1(Eq, y));
+            return Some(!x.op1(Eq, y));
         }
         if xc.is_ones() {
-            return TermResult::Some(Term::bool_const(false));
+            return Some(Term::bool_const(false));
         }
     }
     if let Some(yc) = y.try_bv_const() {
         if yc.is_zero() {
-            return TermResult::Some(Term::bool_const(false));
+            return Some(Term::bool_const(false));
         }
         if yc.is_ones() {
-            return TermResult::Some(!x.op1(Eq, y));
+            return Some(!x.op1(Eq, y));
         }
     }
-    TermResult::None
+    None
 }
 fn ult_bitblast(terms: &[TermVec]) -> TermVec {
     let mut res = Term::bool_const(false);
@@ -476,38 +476,38 @@ fn ite_simplify(terms: &[Term]) -> TermResult {
     let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
     if let Some(cc) = c.try_bv_const() {
         if cc.is_ones() {
-            return TermResult::Some(t.clone());
+            return Some(t.clone());
         } else {
-            return TermResult::Some(e.clone());
+            return Some(e.clone());
         }
     }
     if t == e {
-        return TermResult::Some(t.clone());
+        return Some(t.clone());
     }
     if let Some(cop) = c.try_op()
         && cop.op == Not
     {
-        return TermResult::Some(cop[0].ite(e, t));
+        return Some(cop[0].ite(e, t));
     }
     if t.is_bool() {
         if let Some(ec) = e.try_bv_const() {
             if ec.is_zero() {
-                return TermResult::Some(c & t);
+                return Some(c & t);
             }
             if ec.is_ones() {
-                return TermResult::Some(!c | t);
+                return Some(!c | t);
             }
         }
         if let Some(tc) = t.try_bv_const() {
             if tc.is_zero() {
-                return TermResult::Some(!c & e);
+                return Some(!c & e);
             }
             if tc.is_ones() {
-                return TermResult::Some(c | e);
+                return Some(c | e);
             }
         }
     }
-    TermResult::None
+    None
 }
 fn ite_bitblast(terms: &[TermVec]) -> TermVec {
     let mut res = TermVec::new();
@@ -529,9 +529,9 @@ fn concat_simplify(terms: &[Term]) -> TermResult {
     if let (Some(xc), Some(yc)) = (x.try_bv_const(), y.try_bv_const()) {
         let mut c = yc.clone();
         c.extend(xc.iter());
-        return TermResult::Some(Term::bv_const(c));
+        return Some(Term::bv_const(c));
     }
-    TermResult::None
+    None
 }
 fn concat_sort(terms: &[Term]) -> Sort {
     Sort::Bv(terms[0].bv_len() + terms[1].bv_len())
@@ -568,9 +568,9 @@ fn slice_simplify(terms: &[Term]) -> TermResult {
     let l = terms[2].bv_len();
     let h = terms[1].bv_len();
     if l == 0 && h == 0 && s.bv_len() == 1 {
-        return TermResult::Some(s.clone());
+        return Some(s.clone());
     }
-    TermResult::None
+    None
 }
 
 define_core_op!(Redxor, 1, sort: bool_sort, bitblast: redxor_bitblast);
@@ -614,13 +614,13 @@ fn sub_simplify(terms: &[Term]) -> TermResult {
     let (x, y) = (&terms[0], &terms[1]);
     if let Some(yc) = y.try_bv_const() {
         if yc.is_zero() {
-            return TermResult::Some(x.clone());
+            return Some(x.clone());
         }
         if x.bv_len() == 1 && yc.is_one() {
-            return TermResult::Some(!x.clone());
+            return Some(!x.clone());
         }
     }
-    TermResult::None
+    None
 }
 
 // define_core_op!(Uaddo, 2, sort: bool_sort, bitblast: uaddo_bitblast);
@@ -678,13 +678,13 @@ fn mul_bitblast(terms: &[TermVec]) -> TermVec {
 fn ordered_mul_simplify(x: &Term, y: &Term) -> TermResult {
     if let Some(xc) = x.try_bv_const() {
         if xc.is_zero() {
-            return TermResult::Some(x.clone());
+            return Some(x.clone());
         }
         if xc.is_one() {
-            return TermResult::Some(y.clone());
+            return Some(y.clone());
         }
     }
-    TermResult::None
+    None
 }
 
 fn mul_simplify(terms: &[Term]) -> TermResult {
@@ -795,10 +795,10 @@ fn udiv_simplify(_terms: &[Term]) -> TermResult {
     // let (x, _y) = (&terms[0], &terms[1]);
     // if let Some(xc) = x.try_bv_const() {
     //     if xc.is_zero() {
-    //         return TermResult::Some(x.clone());
+    //         return Some(x.clone());
     //     }
     // }
-    TermResult::None
+    None
 }
 
 define_core_op!(Urem, 2, bitblast: urem_bitblast);

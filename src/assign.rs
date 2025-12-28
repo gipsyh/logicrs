@@ -1,4 +1,4 @@
-use crate::{Lbool, Lit, LitVec, Var, VarMap};
+use crate::{Lbool, Lit, LitVec, Var, VarMap, VarRange};
 use giputils::bitvec::BitVec;
 use std::ops::{Deref, DerefMut, Index, IndexMut};
 
@@ -133,7 +133,7 @@ impl VarBitVec {
                 assump.push(l);
             }
         } else {
-            for v in Var::CONST..=self.vbv.max_var() {
+            for v in VarRange::new_inclusive(Var::CONST, self.vbv.max_var()) {
                 let b = self[v].get(idx);
                 let l = v.lit().not_if(!b);
                 assump.push(l);

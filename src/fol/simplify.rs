@@ -1,4 +1,4 @@
-use super::{Term, TermResult};
+use super::Term;
 use giputils::hash::GHashMap;
 
 impl Term {
@@ -8,7 +8,7 @@ impl Term {
         }
         let simp = if let Some(op_term) = self.try_op() {
             let terms: Vec<Term> = op_term.terms.iter().map(|s| s.simplify(map)).collect();
-            if let TermResult::Some(new) = op_term.op.simplify(&terms) {
+            if let Some(new) = op_term.op.simplify(&terms) {
                 new
             } else {
                 Term::new_op(op_term.op.clone(), &terms)
