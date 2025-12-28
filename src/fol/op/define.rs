@@ -37,6 +37,11 @@ macro_rules! op_trait_impl {
             $impl(dc, terms)
         }
     };
+    (simulate $impl:expr) => {
+        fn simulate(&self, vals: &[crate::fol::Value]) -> crate::fol::Value {
+            $impl(vals)
+        }
+    };
 }
 
 macro_rules! define_core_op {

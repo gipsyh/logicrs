@@ -1,9 +1,10 @@
 mod core_op;
 mod define;
 mod other_op;
+mod simulate;
 
 use super::term::Term;
-use crate::fol::{Sort, TermResult, TermVec};
+use crate::fol::{Sort, TermResult, TermVec, Value};
 use crate::{DagCnf, Lit};
 pub use core_op::*;
 use giputils::hash::GHashMap;
@@ -51,6 +52,10 @@ pub trait Op: Debug + 'static {
 
     fn cnf_encode(&self, _dc: &mut DagCnf, _terms: &[Lit]) -> Lit {
         panic!("{self:?} not support cnf_encode");
+    }
+
+    fn simulate(&self, _vals: &[Value]) -> Value {
+        panic!("{self:?} not support simulate");
     }
 }
 

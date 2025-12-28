@@ -1,4 +1,5 @@
 use super::define::define_core_op;
+use super::simulate::*;
 use super::{Sort, Term, TermResult, TermVec};
 use crate::fol::op::define::define_core_fold_op;
 use crate::{DagCnf, Lit, LitVvec};
@@ -9,7 +10,7 @@ fn bool_sort(_terms: &[Term]) -> Sort {
     Sort::Bv(1)
 }
 
-define_core_op!(Not, 1, bitblast: not_bitblast, cnf_encode: not_cnf_encode, simplify: not_simplify);
+define_core_op!(Not, 1, bitblast: not_bitblast, cnf_encode: not_cnf_encode, simplify: not_simplify, simulate: not_simulate);
 fn not_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
     if let Some(op) = x.try_op()
@@ -29,7 +30,7 @@ fn not_cnf_encode(_dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     !terms[0]
 }
 
-define_core_op!(And, 2, bitblast: and_bitblast, cnf_encode: and_cnf_encode, simplify: and_simplify);
+define_core_op!(And, 2, bitblast: and_bitblast, cnf_encode: and_cnf_encode, simplify: and_simplify, simulate: and_simulate);
 
 fn ordered_and_simplify(a: &Term, b: &Term) -> TermResult {
     if let Some(ac) = a.try_bv_const() {
@@ -104,14 +105,14 @@ fn and_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
-define_core_fold_op!(Ands, cnf_encode: ands_cnf_encode);
+define_core_fold_op!(Ands, cnf_encode: ands_cnf_encode, simulate: ands_simulate);
 fn ands_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     let l = dc.new_var().lit();
     dc.add_rel(l.var(), &LitVvec::cnf_and(l, terms));
     l
 }
 
-define_core_op!(Or, 2, bitblast: or_bitblast, cnf_encode: or_cnf_encode, simplify: or_simplify);
+define_core_op!(Or, 2, bitblast: or_bitblast, cnf_encode: or_cnf_encode, simplify: or_simplify, simulate: or_simulate);
 fn or_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
     let y = &terms[1];
@@ -179,14 +180,14 @@ fn or_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
-define_core_fold_op!(Ors, cnf_encode: ors_cnf_encode);
+define_core_fold_op!(Ors, cnf_encode: ors_cnf_encode, simulate: ors_simulate);
 fn ors_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     let l = dc.new_var().lit();
     dc.add_rel(l.var(), &LitVvec::cnf_or(l, terms));
     l
 }
 
-define_core_op!(Xor, 2, bitblast: xor_bitblast, cnf_encode: xor_cnf_encode, simplify: xor_simplify);
+define_core_op!(Xor, 2, bitblast: xor_bitblast, cnf_encode: xor_cnf_encode, simplify: xor_simplify, simulate: xor_simulate);
 fn xor_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
     let y = &terms[1];
@@ -219,7 +220,7 @@ fn xor_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
-define_core_op!(Eq, 2, sort: bool_sort, bitblast: eq_bitblast, cnf_encode: eq_cnf_encode, simplify: eq_simplify);
+define_core_op!(Eq, 2, sort: bool_sort, bitblast: eq_bitblast, cnf_encode: eq_cnf_encode, simplify: eq_simplify, simulate: eq_simulate);
 fn eq_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
     let y = &terms[1];
@@ -250,7 +251,7 @@ fn eq_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
-define_core_op!(Ult, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify);
+define_core_op!(Ult, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify, simulate: ult_simulate);
 // define_core_op!(Usubo, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify);
 fn ult_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
@@ -281,7 +282,7 @@ fn ult_bitblast(terms: &[TermVec]) -> TermVec {
     TermVec::from([res])
 }
 
-define_core_op!(Slt, 2, sort: bool_sort, bitblast: slt_bitblast);
+define_core_op!(Slt, 2, sort: bool_sort, bitblast: slt_bitblast, simulate: slt_simulate);
 fn slt_bitblast(terms: &[TermVec]) -> TermVec {
     let x = &terms[0];
     let y = &terms[1];
@@ -297,7 +298,7 @@ fn slt_bitblast(terms: &[TermVec]) -> TermVec {
     TermVec::from([ls | (eqs & el)])
 }
 
-define_core_op!(Sll, 2, bitblast: sll_bitblast);
+define_core_op!(Sll, 2, bitblast: sll_bitblast, simulate: sll_simulate);
 fn sll_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     assert!(x.len() == y.len());
@@ -331,7 +332,7 @@ fn sll_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Srl, 2, bitblast: srl_bitblast);
+define_core_op!(Srl, 2, bitblast: srl_bitblast, simulate: srl_simulate);
 fn srl_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     assert!(x.len() == y.len());
@@ -365,7 +366,7 @@ fn srl_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Sra, 2, bitblast: sra_bitblast);
+define_core_op!(Sra, 2, bitblast: sra_bitblast, simulate: sra_simulate);
 fn sra_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     assert!(x.len() == y.len());
@@ -400,7 +401,7 @@ fn sra_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Rol, 2, bitblast: rol_bitblast);
+define_core_op!(Rol, 2, bitblast: rol_bitblast, simulate: rol_simulate);
 fn rol_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     assert_eq!(x.len(), y.len());
@@ -435,7 +436,7 @@ fn rol_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Ror, 2, bitblast: ror_bitblast);
+define_core_op!(Ror, 2, bitblast: ror_bitblast, simulate: ror_simulate);
 fn ror_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     assert_eq!(x.len(), y.len());
@@ -468,7 +469,7 @@ fn ror_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Ite, 3, sort: ite_sort, bitblast: ite_bitblast, cnf_encode: ite_cnf_encode, simplify: ite_simplify);
+define_core_op!(Ite, 3, sort: ite_sort, bitblast: ite_bitblast, cnf_encode: ite_cnf_encode, simplify: ite_simplify, simulate: ite_simulate);
 fn ite_sort(terms: &[Term]) -> Sort {
     terms[1].sort()
 }
@@ -522,7 +523,7 @@ fn ite_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
-define_core_op!(Concat, 2, sort: concat_sort, bitblast: concat_bitblast, simplify: concat_simplify);
+define_core_op!(Concat, 2, sort: concat_sort, bitblast: concat_bitblast, simplify: concat_simplify, simulate: concat_simulate);
 fn concat_simplify(terms: &[Term]) -> TermResult {
     let x = &terms[0];
     let y = &terms[1];
@@ -542,7 +543,7 @@ fn concat_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Sext, 2, sort: sext_sort, bitblast: sext_bitblast);
+define_core_op!(Sext, 2, sort: sext_sort, bitblast: sext_bitblast, simulate: sext_simulate);
 fn sext_sort(terms: &[Term]) -> Sort {
     Sort::Bv(terms[0].bv_len() + terms[1].bv_len())
 }
@@ -554,7 +555,7 @@ fn sext_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Slice, 3, sort: slice_sort, bitblast: slice_bitblast, simplify: slice_simplify);
+define_core_op!(Slice, 3, sort: slice_sort, bitblast: slice_bitblast, simplify: slice_simplify, simulate: slice_simulate);
 fn slice_sort(terms: &[Term]) -> Sort {
     Sort::Bv(terms[1].bv_len() - terms[2].bv_len() + 1)
 }
@@ -573,7 +574,7 @@ fn slice_simplify(terms: &[Term]) -> TermResult {
     None
 }
 
-define_core_op!(Redxor, 1, sort: bool_sort, bitblast: redxor_bitblast);
+define_core_op!(Redxor, 1, sort: bool_sort, bitblast: redxor_bitblast, simulate: redxor_simulate);
 fn redxor_bitblast(terms: &[TermVec]) -> TermVec {
     TermVec::from([Term::new_op_fold(Xor, terms[0].iter())])
 }
@@ -588,7 +589,7 @@ fn full_adder(x: &Term, y: &Term, c: &Term) -> (Term, Term) {
     (r, c)
 }
 
-define_core_op!(Add, 2, bitblast: add_bitblast);
+define_core_op!(Add, 2, bitblast: add_bitblast, simulate: add_simulate);
 fn add_bitblast(terms: &[TermVec]) -> TermVec {
     let mut r;
     let mut c = Term::bool_const(false);
@@ -599,7 +600,7 @@ fn add_bitblast(terms: &[TermVec]) -> TermVec {
     }
     res
 }
-define_core_op!(Sub, 2, bitblast: sub_bitblast, simplify: sub_simplify);
+define_core_op!(Sub, 2, bitblast: sub_bitblast, simplify: sub_simplify, simulate: sub_simulate);
 fn sub_bitblast(terms: &[TermVec]) -> TermVec {
     let mut r;
     let mut c = Term::bool_const(true);
@@ -658,7 +659,7 @@ fn sub_simplify(terms: &[Term]) -> TermResult {
 //     TermVec::from([v1 | v2])
 // }
 
-define_core_op!(Mul, 2, bitblast: mul_bitblast, simplify: mul_simplify);
+define_core_op!(Mul, 2, bitblast: mul_bitblast, simplify: mul_simplify, simulate: mul_simulate);
 fn mul_bitblast(terms: &[TermVec]) -> TermVec {
     let x = &terms[0];
     let y = &terms[1];
@@ -785,7 +786,7 @@ fn udiv_urem_bitblast(a: &TermVec, din: &TermVec) -> (TermVec, TermVec) {
     (q, TermVec::from(s[size][1..=size].to_vec()))
 }
 
-define_core_op!(Udiv, 2, bitblast: udiv_bitblast, simplify: udiv_simplify);
+define_core_op!(Udiv, 2, bitblast: udiv_bitblast, simplify: udiv_simplify, simulate: udiv_simulate);
 fn udiv_bitblast(terms: &[TermVec]) -> TermVec {
     let (q, _) = udiv_urem_bitblast(&terms[0], &terms[1]);
     q
@@ -801,13 +802,13 @@ fn udiv_simplify(_terms: &[Term]) -> TermResult {
     None
 }
 
-define_core_op!(Urem, 2, bitblast: urem_bitblast);
+define_core_op!(Urem, 2, bitblast: urem_bitblast, simulate: urem_simulate);
 fn urem_bitblast(terms: &[TermVec]) -> TermVec {
     let (_, r) = udiv_urem_bitblast(&terms[0], &terms[1]);
     r
 }
 
-define_core_op!(Neg, 1, bitblast: neg_bitblast);
+define_core_op!(Neg, 1, bitblast: neg_bitblast, simulate: neg_simulate);
 fn neg_bitblast(terms: &[TermVec]) -> TermVec {
     let x = &terms[0];
     let mut res = TermVec::new();
@@ -820,7 +821,7 @@ fn neg_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Sdiv, 2, bitblast: sdiv_bitblast);
+define_core_op!(Sdiv, 2, bitblast: sdiv_bitblast, simulate: sdiv_simulate);
 fn sdiv_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     let w = x.len();
@@ -851,7 +852,7 @@ fn sdiv_bitblast(terms: &[TermVec]) -> TermVec {
         .collect()
 }
 
-define_core_op!(Srem, 2, bitblast: srem_bitblast);
+define_core_op!(Srem, 2, bitblast: srem_bitblast, simulate: srem_simulate);
 fn srem_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     let w = x.len();
@@ -880,7 +881,7 @@ fn srem_bitblast(terms: &[TermVec]) -> TermVec {
         .collect()
 }
 
-define_core_op!(Smod, 2, bitblast: smod_bitblast);
+define_core_op!(Smod, 2, bitblast: smod_bitblast, simulate: smod_simulate);
 fn smod_bitblast(terms: &[TermVec]) -> TermVec {
     let (x, y) = (&terms[0], &terms[1]);
     let w = x.len();
@@ -941,7 +942,7 @@ fn smod_bitblast(terms: &[TermVec]) -> TermVec {
 //     TermVec::from([div_by0 | mneg_div_neg1])
 // }
 
-define_core_op!(Read, 2, sort: read_sort, bitblast: read_bitblast);
+define_core_op!(Read, 2, sort: read_sort, bitblast: read_bitblast, simulate: read_simulate);
 fn read_sort(terms: &[Term]) -> Sort {
     let (_, e) = terms[0].sort().array();
     Sort::Bv(e)
@@ -990,7 +991,7 @@ fn read_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Write, 3, bitblast: write_bitblast);
+define_core_op!(Write, 3, bitblast: write_bitblast, simulate: write_simulate);
 fn write_bitblast(terms: &[TermVec]) -> TermVec {
     let (array, index, value) = (&terms[0], &terms[1], &terms[2]);
     let index_len = index.len();
