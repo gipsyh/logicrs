@@ -2,6 +2,8 @@ mod core_op;
 mod define;
 mod other_op;
 mod simulate;
+#[cfg(test)]
+mod test;
 
 use super::term::Term;
 use crate::fol::{Sort, TermResult, TermVec, Value};
