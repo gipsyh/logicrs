@@ -155,6 +155,11 @@ impl LboolVec {
     }
 
     #[inline]
+    pub fn all_x(&self) -> bool {
+        self.mask().is_zero()
+    }
+
+    #[inline]
     pub fn v(&self) -> &BitVec {
         &self.v
     }

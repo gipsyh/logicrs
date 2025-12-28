@@ -228,11 +228,11 @@ impl Term {
         self.cached_apply(&r, &mut GHashMap::new())
     }
 
-    pub fn simulate(&self, val: &GHashMap<Term, Value>) -> Value {
+    pub fn simulate(&self, val: &mut GHashMap<Term, Value>) -> Value {
         if let Some(v) = val.get(self) {
             return v.clone();
         }
-        match self.deref() {
+        let v = match self.deref() {
             TermType::Const(c) => Value::Bv(c.clone().into()),
             TermType::Var(_) => Value::default_from(&self.sort()),
             TermType::Op(op_term) => {
@@ -240,7 +240,9 @@ impl Term {
                     op_term.terms.iter().map(|t| t.simulate(val)).collect();
                 op_term.op.simulate(&child_vals)
             }
-        }
+        };
+        val.insert(self.clone(), v.clone());
+        v
     }
 }
 

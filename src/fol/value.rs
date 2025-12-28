@@ -105,6 +105,11 @@ impl TermValue {
         &self.t
     }
 
+    #[inline]
+    pub fn v(&self) -> &Value {
+        &self.v
+    }
+
     pub fn into_bv(&self) -> BvTermValue {
         BvTermValue {
             t: self.t.clone(),
