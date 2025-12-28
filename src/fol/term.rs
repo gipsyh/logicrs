@@ -1,7 +1,7 @@
 use super::op::{Add, And, Ite, Neg, Not, Or, Sub, Xor};
 use super::{op::DynOp, sort::Sort};
 use crate::fol::op::{Concat, Slice};
-use crate::fol::{TermVec, op};
+use crate::fol::{TermVec, Value, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::GHashMap;
@@ -226,6 +226,21 @@ impl Term {
 
     pub fn apply(&self, r: impl Fn(&Term) -> Option<Term>) -> Term {
         self.cached_apply(&r, &mut GHashMap::new())
+    }
+
+    pub fn simulate(&self, val: &GHashMap<Term, Value>) -> Value {
+        if let Some(v) = val.get(self) {
+            return v.clone();
+        }
+        match self.deref() {
+            TermType::Const(c) => Value::Bv(c.clone().into()),
+            TermType::Var(_) => Value::default_from(&self.sort()),
+            TermType::Op(op_term) => {
+                let child_vals: Vec<Value> =
+                    op_term.terms.iter().map(|t| t.simulate(val)).collect();
+                op_term.op.simulate(&child_vals)
+            }
+        }
     }
 }
 

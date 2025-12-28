@@ -4,6 +4,8 @@ mod replace;
 mod simplify;
 mod sort;
 mod term;
+#[cfg(test)]
+mod test;
 mod utils;
 mod value;
 
