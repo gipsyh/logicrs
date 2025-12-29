@@ -4,7 +4,7 @@ use crate::{
     occur::Occurs,
 };
 use giputils::{allocator::Gallocator, grc::Grc, hash::GHashSet, heap::BinaryHeap};
-use log::info;
+use log::debug;
 use std::{
     iter::once,
     time::{Duration, Instant},
@@ -384,7 +384,7 @@ impl DagCnfSimplify {
             dagcnf.add_rel(v, &cnf);
         }
         self.time += start.elapsed();
-        info!(
+        debug!(
             "dagcnf simplified from {} to {} clauses in {:.2}s",
             self.num_ocls,
             dagcnf.num_clause(),
