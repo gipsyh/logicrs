@@ -307,6 +307,15 @@ impl Not for Lit {
     }
 }
 
+impl Not for &Lit {
+    type Output = Lit;
+
+    #[inline]
+    fn not(self) -> Self::Output {
+        !*self
+    }
+}
+
 impl AsRef<Lit> for Lit {
     #[inline]
     fn as_ref(&self) -> &Lit {
