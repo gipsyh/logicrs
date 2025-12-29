@@ -20,6 +20,7 @@ pub use lbool::*;
 pub use litordvec::*;
 pub use litvec::*;
 pub use litvvec::*;
+use serde::{Deserialize, Serialize};
 pub use utils::*;
 
 use std::{
@@ -28,7 +29,7 @@ use std::{
     ops::{Add, AddAssign, Deref, Not, Sub},
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub struct Var(pub u32);
 
 impl Var {
@@ -210,7 +211,7 @@ impl DoubleEndedIterator for VarRange {
 
 impl ExactSizeIterator for VarRange {}
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub struct Lit(u32);
 
 impl From<Var> for Lit {

@@ -1,10 +1,11 @@
 use crate::{Lit, LitVec};
+use serde::{Deserialize, Serialize};
 use std::{
     ops::{Deref, DerefMut},
     slice, vec,
 };
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LitVvec {
     vec: Vec<LitVec>,
 }

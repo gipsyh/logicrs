@@ -1,5 +1,6 @@
 use crate::{Lit, Var, VarAssign};
 use giputils::hash::GHashSet;
+use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,
     fmt::{self, Debug, Display},
@@ -7,7 +8,7 @@ use std::{
     slice,
 };
 
-#[derive(Clone, Hash, PartialEq, Eq)]
+#[derive(Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LitVec {
     lits: Vec<Lit>,
 }
