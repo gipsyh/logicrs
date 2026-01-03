@@ -60,6 +60,15 @@ impl Add<Var> for Var {
     }
 }
 
+impl Sub<Var> for Var {
+    type Output = Var;
+
+    #[inline]
+    fn sub(self, rhs: Var) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
 impl AddAssign<Var> for Var {
     #[inline]
     fn add_assign(&mut self, rhs: Var) {
