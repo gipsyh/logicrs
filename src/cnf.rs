@@ -1,4 +1,4 @@
-use crate::{DagCnf, Lit, LitVec, Var, VarVMap};
+use crate::{DagCnf, Lit, LitVec, LitVvec, Var, VarVMap};
 use giputils::hash::GHashSet;
 use std::{
     iter::once,
@@ -82,6 +82,54 @@ impl Cnf {
 
     pub fn set_cls(&mut self, cls: Vec<LitVec>) {
         self.cls = cls;
+    }
+
+    #[inline]
+    pub fn new_and(&mut self, ands: impl IntoIterator<Item = impl AsRef<Lit>>) -> Lit {
+        let mut and = Vec::new();
+        for a in ands.into_iter() {
+            let a = a.as_ref();
+            if a.is_constant(true) {
+                continue;
+            }
+            if a.is_constant(false) {
+                return Lit::constant(false);
+            }
+            and.push(*a);
+        }
+        if and.is_empty() {
+            Lit::constant(true)
+        } else if and.len() == 1 {
+            and[0]
+        } else {
+            let n = self.new_var().lit();
+            self.add_clauses(LitVvec::cnf_and(n, &and));
+            n
+        }
+    }
+
+    #[inline]
+    pub fn new_or(&mut self, ors: impl IntoIterator<Item = impl AsRef<Lit>>) -> Lit {
+        let mut or = Vec::new();
+        for o in ors.into_iter() {
+            let o = o.as_ref();
+            if o.is_constant(false) {
+                continue;
+            }
+            if o.is_constant(true) {
+                return Lit::constant(true);
+            }
+            or.push(*o);
+        }
+        if or.is_empty() {
+            Lit::constant(false)
+        } else if or.len() == 1 {
+            or[0]
+        } else {
+            let n = self.new_var().lit();
+            self.add_clauses(LitVvec::cnf_or(n, &or));
+            n
+        }
     }
 }
 

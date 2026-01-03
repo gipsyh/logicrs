@@ -412,6 +412,20 @@ impl AsRef<[Lit]> for LitVec {
     }
 }
 
+impl AsRef<LitVec> for LitVec {
+    #[inline]
+    fn as_ref(&self) -> &LitVec {
+        self
+    }
+}
+
+impl AsMut<LitVec> for LitVec {
+    #[inline]
+    fn as_mut(&mut self) -> &mut LitVec {
+        self
+    }
+}
+
 impl Display for LitVec {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
