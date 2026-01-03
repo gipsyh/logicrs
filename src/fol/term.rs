@@ -57,6 +57,20 @@ impl Term {
         terms.fold(acc, |acc, x| Self::new_op(op, &[acc, x.as_ref().clone()]))
     }
 
+    /// can only be used for bool terms
+    pub fn new_ands(terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
+        terms.into_iter().fold(Term::bool_const(true), |acc, x| {
+            Self::new_op(op::And, &[acc, x.as_ref().clone()])
+        })
+    }
+
+    /// can only be used for bool terms
+    pub fn new_ors(terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
+        terms.into_iter().fold(Term::bool_const(false), |acc, x| {
+            Self::new_op(op::Or, &[acc, x.as_ref().clone()])
+        })
+    }
+
     #[inline]
     pub fn new_op_elementwise(
         op: impl Into<DynOp> + Copy,
