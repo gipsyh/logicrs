@@ -180,7 +180,7 @@ impl BVA {
             cls.extend(self.occur.get(!v.lit()).iter().copied());
             cls.into_iter().for_each(|cls| {
                 if !self.cdb.is_removed(cls) {
-                    cst.add_clause(self.cdb[cls].cube());
+                    cst.add_clause(self.cdb[cls].as_litvec());
                     self.cdb.dealloc(cls);
                 }
             });

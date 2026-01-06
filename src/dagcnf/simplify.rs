@@ -288,7 +288,7 @@ impl DagCnfSimplify {
                         self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
                         return;
                     }
-                    let mut cube = self.cdb[ci].cube().clone();
+                    let mut cube = self.cdb[ci].as_litvec().clone();
                     cube.retain(|l| *l != diff);
                     self.cdb[ci] = LitOrdVec::new(cube);
                     self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
@@ -297,7 +297,7 @@ impl DagCnfSimplify {
                     self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
                     self.cdb.dealloc(cj);
                 } else {
-                    let mut cube = self.cdb[cj].cube().clone();
+                    let mut cube = self.cdb[cj].as_litvec().clone();
                     assert!(cube.last() == self.cdb[cj].last());
                     cube.retain(|l| *l != !diff);
                     self.cdb[cj] = LitOrdVec::new(cube);
@@ -372,7 +372,7 @@ impl DagCnfSimplify {
                 .chain(self.cnf[!v.lit()].iter())
                 .map(|&cls| {
                     assert!(!self.cdb.is_removed(cls));
-                    self.cdb[cls].cube().clone()
+                    self.cdb[cls].as_litvec().clone()
                 })
                 .collect();
             if self.frozen.contains(&v)
@@ -406,7 +406,7 @@ fn clause_subsume_simplify(lemmas: LitVvec) -> LitVvec {
     let lemmas = lemmas_subsume_simplify(lemmas);
     lemmas
         .into_iter()
-        .map(|l| LitVec::from(l.cube().as_slice()))
+        .map(|l| LitVec::from(l.as_litvec().as_slice()))
         .collect()
 }
 

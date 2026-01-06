@@ -80,7 +80,7 @@ impl LitOrdVec {
     }
 
     #[inline]
-    pub fn cube(&self) -> &LitVec {
+    pub fn as_litvec(&self) -> &LitVec {
         &self.cube
     }
 
@@ -168,12 +168,12 @@ pub fn lemmas_subsume_simplify(mut lemmas: Vec<LitOrdVec>) -> Vec<LitOrdVec> {
             } else if let Some(diff) = diff {
                 if lemmas[i].len() == lemmas[j].len() {
                     update = true;
-                    let mut cube = lemmas[i].cube().clone();
+                    let mut cube = lemmas[i].as_litvec().clone();
                     cube.retain(|l| *l != diff);
                     lemmas[i] = LitOrdVec::new(cube);
                     lemmas[j] = Default::default();
                 } else {
-                    let mut cube = lemmas[j].cube().clone();
+                    let mut cube = lemmas[j].as_litvec().clone();
                     cube.retain(|l| *l != !diff);
                     lemmas[j] = LitOrdVec::new(cube);
                 }
