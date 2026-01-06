@@ -85,6 +85,11 @@ impl LitOrdVec {
     }
 
     #[inline]
+    pub fn into_litvec(self) -> LitVec {
+        self.cube
+    }
+
+    #[inline]
     fn var_sign(&self) -> u128 {
         ((self.sign >> 1) | self.sign) & 113427455640312821154458202477256070485_u128
     }

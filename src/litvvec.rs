@@ -1,4 +1,4 @@
-use crate::{Lit, LitVec};
+use crate::{Lit, LitOrdVec, LitVec, lemmas_subsume_simplify};
 use serde::{Deserialize, Serialize};
 use std::{
     ops::{Deref, DerefMut},
@@ -84,43 +84,11 @@ impl LitVvec {
     }
 
     pub fn subsume_simplify(&mut self) {
-        self.sort_by_key(|l| l.len());
-        for c in self.iter_mut() {
-            c.sort();
-        }
-        let mut i = 0;
-        while i < self.len() {
-            if self[i].is_empty() {
-                i += 1;
-                continue;
-            }
-            let mut update = false;
-            for j in 0..self.len() {
-                if i == j {
-                    continue;
-                }
-                if self[j].is_empty() {
-                    continue;
-                }
-                let (res, diff) = self[i].ordered_subsume_execpt_one(&self[j]);
-                if res {
-                    self[j] = Default::default();
-                    continue;
-                } else if let Some(diff) = diff {
-                    if self[i].len() == self[j].len() {
-                        update = true;
-                        self[i].retain(|l| *l != diff);
-                        self[j] = Default::default();
-                    } else {
-                        self[j].retain(|l| *l != !diff);
-                    }
-                }
-            }
-            if !update {
-                i += 1;
-            }
-        }
-        self.retain(|l| !l.is_empty());
+        let res: Vec<_> = self.iter().map(|l| LitOrdVec::new(l.clone())).collect();
+        self.vec = lemmas_subsume_simplify(res)
+            .into_iter()
+            .map(|l| l.into_litvec())
+            .collect();
     }
 }
 
