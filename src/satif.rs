@@ -1,5 +1,6 @@
 use crate::{Lit, LitVec, Var};
-use std::time::Duration;
+use giputils::StopCtrl;
+use std::{sync::mpsc::channel, thread::scope, time::Duration};
 
 pub trait Satif: Send {
     fn new_var(&mut self) -> Var;
@@ -25,13 +26,31 @@ pub trait Satif: Send {
         panic!("unsupport solve with constraint");
     }
 
+    /// Maybe return unknown results
+    fn try_solve(&mut self, _assumps: &[Lit], _constraint: Vec<LitVec>) -> Option<bool> {
+        panic!("unsupport try_solve");
+    }
+
     fn solve_with_limit(
         &mut self,
-        _assumps: &[Lit],
-        _constraint: Vec<LitVec>,
-        _limit: Duration,
+        assumps: &[Lit],
+        constraint: Vec<LitVec>,
+        limit: Duration,
     ) -> Option<bool> {
-        panic!("unsupport solve with limit");
+        let mut stop = self.get_stop_ctrl();
+        let (tx, rx) = channel();
+        scope(|s| {
+            let join = s.spawn(|| tx.send(self.try_solve(assumps, constraint)).unwrap());
+            match rx.recv_timeout(limit) {
+                Ok(Some(x)) => Some(x),
+                Ok(None) => unreachable!(),
+                Err(_) => {
+                    stop.stop();
+                    join.join().unwrap();
+                    None
+                }
+            }
+        })
     }
 
     fn sat_value(&self, lit: Lit) -> Option<bool>;
@@ -63,5 +82,9 @@ pub trait Satif: Send {
 
     fn flip_to_none(&mut self, _var: Var) -> bool {
         false
+    }
+
+    fn get_stop_ctrl(&mut self) -> Box<dyn StopCtrl> {
+        panic!("unsupport get_stop_ctrl");
     }
 }
