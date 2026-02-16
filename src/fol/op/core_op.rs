@@ -1,6 +1,6 @@
 use super::define::define_core_op;
 use super::simulate::*;
-use super::{Sort, Term, TermResult, TermVec};
+use super::{DynOp, OpTrait, OptLevel, SimplifyCtx, Sort, Term, TermResult, TermVec};
 use crate::fol::op::define::define_core_fold_op;
 use crate::{DagCnf, Lit, LitVvec};
 use std::slice;
@@ -10,8 +10,11 @@ fn bool_sort(_terms: &[Term]) -> Sort {
     Sort::Bv(1)
 }
 
-define_core_op!(Not, 1, bitblast: not_bitblast, cnf_encode: not_cnf_encode, simplify: not_simplify, simulate: not_simulate);
-fn not_simplify(terms: &[Term]) -> TermResult {
+define_core_op!(Not, 1, traits: OpTrait::Involutive.into(), bitblast: not_bitblast, cnf_encode: not_cnf_encode, simplify: not_simplify, simulate: not_simulate);
+fn not_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
     let x = &terms[0];
     if let Some(op) = x.try_op()
         && op.op == Not
@@ -30,9 +33,14 @@ fn not_cnf_encode(_dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     !terms[0]
 }
 
-define_core_op!(And, 2, bitblast: and_bitblast, cnf_encode: and_cnf_encode, simplify: and_simplify, simulate: and_simulate);
+define_core_op!(And, 2, traits: OpTrait::Commutative | OpTrait::Associative | OpTrait::Idempotent, bitblast: and_bitblast, cnf_encode: and_cnf_encode, simplify: and_simplify, simulate: and_simulate);
 
-fn ordered_and_simplify(a: &Term, b: &Term) -> TermResult {
+fn and_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
+    let a = &terms[0];
+    let b = &terms[1];
     if let Some(ac) = a.try_bv_const() {
         if ac.is_ones() {
             return Some(b.clone());
@@ -90,12 +98,6 @@ fn ordered_and_simplify(a: &Term, b: &Term) -> TermResult {
     }
     None
 }
-fn and_simplify(terms: &[Term]) -> TermResult {
-    let x = &terms[0];
-    let y = &terms[1];
-    ordered_and_simplify(x, y)?;
-    ordered_and_simplify(y, x)
-}
 fn and_bitblast(terms: &[TermVec]) -> TermVec {
     Term::new_op_elementwise(And, &terms[0], &terms[1])
 }
@@ -112,64 +114,63 @@ fn ands_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
-define_core_op!(Or, 2, bitblast: or_bitblast, cnf_encode: or_cnf_encode, simplify: or_simplify, simulate: or_simulate);
-fn or_simplify(terms: &[Term]) -> TermResult {
-    let x = &terms[0];
-    let y = &terms[1];
-    let simp = |a: &Term, b: &Term| {
-        if let Some(ac) = a.try_bv_const() {
-            if ac.is_ones() {
-                return Some(a.clone());
-            }
-            if ac.is_zero() {
-                return Some(b.clone());
-            }
-        }
-        if a == b {
+define_core_op!(Or, 2, traits: OpTrait::Commutative | OpTrait::Associative | OpTrait::Idempotent, bitblast: or_bitblast, cnf_encode: or_cnf_encode, simplify: or_simplify, simulate: or_simulate);
+fn or_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
+    let a = &terms[0];
+    let b = &terms[1];
+    if let Some(ac) = a.try_bv_const() {
+        if ac.is_ones() {
             return Some(a.clone());
         }
-        if a == !b {
-            return Some(a.mk_bv_const_ones());
+        if ac.is_zero() {
+            return Some(b.clone());
         }
-        if let Some(aop) = a.try_op() {
-            if aop.op == Or {
-                if b == aop[0] {
-                    return Some(b | &aop[1]);
-                }
-                if b == aop[1] {
-                    return Some(b | &aop[0]);
-                }
+    }
+    if a == b {
+        return Some(a.clone());
+    }
+    if a == !b {
+        return Some(a.mk_bv_const_ones());
+    }
+    if let Some(aop) = a.try_op() {
+        if aop.op == Or {
+            if b == aop[0] {
+                return Some(b | &aop[1]);
             }
-            if aop.op == Not
-                && let Some(bop) = b.try_op()
-                && bop.op == Not
-            {
-                return Some(!(&aop[0] & &bop[0]));
-            }
-            if aop.op == Ite {
-                if b == aop[0] {
-                    return Some(b | &aop[2]);
-                }
-                if b == !&aop[0] {
-                    return Some(b | &aop[1]);
-                }
-            }
-            if aop.op == And
-                && let Some(bop) = b.try_op()
-                && bop.op == And
-            {
-                if aop[0] == bop[0] {
-                    return Some(&aop[0] & (&aop[1] | &bop[1]));
-                }
-                if aop[0] == bop[1] {
-                    return Some(&aop[0] & (&aop[1] | &bop[0]));
-                }
+            if b == aop[1] {
+                return Some(b | &aop[0]);
             }
         }
-        None
-    };
-    simp(x, y)?;
-    simp(y, x)
+        if aop.op == Not
+            && let Some(bop) = b.try_op()
+            && bop.op == Not
+        {
+            return Some(!(&aop[0] & &bop[0]));
+        }
+        if aop.op == Ite {
+            if b == aop[0] {
+                return Some(b | &aop[2]);
+            }
+            if b == !&aop[0] {
+                return Some(b | &aop[1]);
+            }
+        }
+        if aop.op == And
+            && let Some(bop) = b.try_op()
+            && bop.op == And
+        {
+            if aop[0] == bop[0] {
+                return Some(&aop[0] & (&aop[1] | &bop[1]));
+            }
+            if aop[0] == bop[1] {
+                return Some(&aop[0] & (&aop[1] | &bop[0]));
+            }
+        }
+    }
+    None
 }
 fn or_bitblast(terms: &[TermVec]) -> TermVec {
     Term::new_op_elementwise(Or, &terms[0], &terms[1])
@@ -187,29 +188,28 @@ fn ors_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
-define_core_op!(Xor, 2, bitblast: xor_bitblast, cnf_encode: xor_cnf_encode, simplify: xor_simplify, simulate: xor_simulate);
-fn xor_simplify(terms: &[Term]) -> TermResult {
-    let x = &terms[0];
-    let y = &terms[1];
-    let simp = |a: &Term, b: &Term| {
-        if let Some(ac) = a.try_bv_const() {
-            if ac.is_ones() {
-                return Some(!b.clone());
-            }
-            if ac.is_zero() {
-                return Some(b.clone());
-            }
+define_core_op!(Xor, 2, traits: OpTrait::Commutative | OpTrait::Associative, bitblast: xor_bitblast, cnf_encode: xor_cnf_encode, simplify: xor_simplify, simulate: xor_simulate);
+fn xor_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
+    let a = &terms[0];
+    let b = &terms[1];
+    if let Some(ac) = a.try_bv_const() {
+        if ac.is_ones() {
+            return Some(!b.clone());
         }
-        if a == b {
-            return Some(a.mk_bv_const_zero());
+        if ac.is_zero() {
+            return Some(b.clone());
         }
-        if a == !b {
-            return Some(a.mk_bv_const_ones());
-        }
-        None
-    };
-    simp(x, y)?;
-    simp(y, x)
+    }
+    if a == b {
+        return Some(a.mk_bv_const_zero());
+    }
+    if a == !b {
+        return Some(a.mk_bv_const_ones());
+    }
+    None
 }
 fn xor_bitblast(terms: &[TermVec]) -> TermVec {
     Term::new_op_elementwise(Xor, &terms[0], &terms[1])
@@ -220,26 +220,25 @@ fn xor_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     l
 }
 
-define_core_op!(Eq, 2, sort: bool_sort, bitblast: eq_bitblast, cnf_encode: eq_cnf_encode, simplify: eq_simplify, simulate: eq_simulate);
-fn eq_simplify(terms: &[Term]) -> TermResult {
+define_core_op!(Eq, 2, traits: OpTrait::Commutative.into(), sort: bool_sort, bitblast: eq_bitblast, cnf_encode: eq_cnf_encode, simplify: eq_simplify, simulate: eq_simulate);
+fn eq_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
     let x = &terms[0];
     let y = &terms[1];
-    let simp = |a: &Term, b: &Term| {
-        if a.is_bool()
-            && let Some(s) = xor_simplify(terms)
-        {
-            return Some(!s);
-        }
-        if a == b {
-            return Some(Term::bool_const(true));
-        }
-        if a == !b {
-            return Some(Term::bool_const(false));
-        }
-        None
-    };
-    simp(x, y)?;
-    simp(y, x)
+    if x.is_bool()
+        && let Some(s) = DynOp::from(Xor).simplify(ctx, terms)
+    {
+        return Some(!s);
+    }
+    if x == y {
+        return Some(Term::bool_const(true));
+    }
+    if x == !y {
+        return Some(Term::bool_const(false));
+    }
+    None
 }
 fn eq_bitblast(terms: &[TermVec]) -> TermVec {
     let neqs = Term::new_op_elementwise(Eq, &terms[0], &terms[1]);
@@ -253,7 +252,10 @@ fn eq_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
 
 define_core_op!(Ult, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify, simulate: ult_simulate);
 // define_core_op!(Usubo, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify);
-fn ult_simplify(terms: &[Term]) -> TermResult {
+fn ult_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
     let x = &terms[0];
     let y = &terms[1];
     if let Some(xc) = x.try_bv_const() {
@@ -473,7 +475,10 @@ define_core_op!(Ite, 3, sort: ite_sort, bitblast: ite_bitblast, cnf_encode: ite_
 fn ite_sort(terms: &[Term]) -> Sort {
     terms[1].sort()
 }
-fn ite_simplify(terms: &[Term]) -> TermResult {
+fn ite_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
     let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
     if let Some(cc) = c.try_bv_const() {
         if cc.is_ones() {
@@ -524,7 +529,10 @@ fn ite_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
 }
 
 define_core_op!(Concat, 2, sort: concat_sort, bitblast: concat_bitblast, simplify: concat_simplify, simulate: concat_simulate);
-fn concat_simplify(terms: &[Term]) -> TermResult {
+fn concat_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
     let x = &terms[0];
     let y = &terms[1];
     if let (Some(xc), Some(yc)) = (x.try_bv_const(), y.try_bv_const()) {
@@ -564,7 +572,10 @@ fn slice_bitblast(terms: &[TermVec]) -> TermVec {
     let h = terms[1].len();
     terms[0][l..=h].iter().cloned().collect()
 }
-fn slice_simplify(terms: &[Term]) -> TermResult {
+fn slice_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
     let s = &terms[0];
     let l = terms[2].bv_len();
     let h = terms[1].bv_len();
@@ -589,7 +600,7 @@ fn full_adder(x: &Term, y: &Term, c: &Term) -> (Term, Term) {
     (r, c)
 }
 
-define_core_op!(Add, 2, bitblast: add_bitblast, simulate: add_simulate);
+define_core_op!(Add, 2, traits: OpTrait::Commutative | OpTrait::Associative, bitblast: add_bitblast, simulate: add_simulate);
 fn add_bitblast(terms: &[TermVec]) -> TermVec {
     let mut r;
     let mut c = Term::bool_const(false);
@@ -611,7 +622,10 @@ fn sub_bitblast(terms: &[TermVec]) -> TermVec {
     }
     res
 }
-fn sub_simplify(terms: &[Term]) -> TermResult {
+fn sub_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
     let (x, y) = (&terms[0], &terms[1]);
     if let Some(yc) = y.try_bv_const() {
         if yc.is_zero() {
@@ -659,7 +673,7 @@ fn sub_simplify(terms: &[Term]) -> TermResult {
 //     TermVec::from([v1 | v2])
 // }
 
-define_core_op!(Mul, 2, bitblast: mul_bitblast, simplify: mul_simplify, simulate: mul_simulate);
+define_core_op!(Mul, 2, traits: OpTrait::Commutative | OpTrait::Associative, bitblast: mul_bitblast, simplify: mul_simplify, simulate: mul_simulate);
 fn mul_bitblast(terms: &[TermVec]) -> TermVec {
     let x = &terms[0];
     let y = &terms[1];
@@ -676,7 +690,12 @@ fn mul_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-fn ordered_mul_simplify(x: &Term, y: &Term) -> TermResult {
+fn mul_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
+    let x = &terms[0];
+    let y = &terms[1];
     if let Some(xc) = x.try_bv_const() {
         if xc.is_zero() {
             return Some(x.clone());
@@ -686,12 +705,6 @@ fn ordered_mul_simplify(x: &Term, y: &Term) -> TermResult {
         }
     }
     None
-}
-
-fn mul_simplify(terms: &[Term]) -> TermResult {
-    let (x, y) = (&terms[0], &terms[1]);
-    ordered_mul_simplify(x, y)?;
-    ordered_mul_simplify(y, x)
 }
 
 // define_core_op!(Umulo, 2, sort: bool_sort, bitblast: umulo_bitblast);
@@ -792,7 +805,7 @@ fn udiv_bitblast(terms: &[TermVec]) -> TermVec {
     q
 }
 
-fn udiv_simplify(_terms: &[Term]) -> TermResult {
+fn udiv_simplify(_ctx: &SimplifyCtx, _terms: &[Term]) -> TermResult {
     // let (x, _y) = (&terms[0], &terms[1]);
     // if let Some(xc) = x.try_bv_const() {
     //     if xc.is_zero() {
@@ -808,7 +821,7 @@ fn urem_bitblast(terms: &[TermVec]) -> TermVec {
     r
 }
 
-define_core_op!(Neg, 1, bitblast: neg_bitblast, simulate: neg_simulate);
+define_core_op!(Neg, 1, traits: OpTrait::Involutive.into(), bitblast: neg_bitblast, simulate: neg_simulate);
 fn neg_bitblast(terms: &[TermVec]) -> TermVec {
     let x = &terms[0];
     let mut res = TermVec::new();

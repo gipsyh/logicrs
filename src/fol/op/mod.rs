@@ -22,6 +22,63 @@ use std::{
     rc::Rc,
 };
 
+/// Compiler-style optimization level used by simplification/canonicalization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OptLevel {
+    O0 = 0,
+    O1 = 1,
+    O2 = 2,
+    O3 = 3,
+}
+
+impl Default for OptLevel {
+    #[inline]
+    fn default() -> Self {
+        Self::O2
+    }
+}
+
+impl OptLevel {
+    #[inline]
+    pub const fn at_least(self, other: OptLevel) -> bool {
+        self as u8 >= other as u8
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SimplifyCtx {
+    pub level: OptLevel,
+}
+
+impl Default for SimplifyCtx {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            level: OptLevel::default(),
+        }
+    }
+}
+
+impl SimplifyCtx {
+    #[inline]
+    pub const fn new(level: OptLevel) -> Self {
+        Self { level }
+    }
+}
+
+/// MLIR-style operation trait metadata (commutative, associative, ...).
+#[enumflags2::bitflags]
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum OpTrait {
+    Commutative = 1 << 0,
+    Associative = 1 << 1,
+    Idempotent = 1 << 2,
+    Involutive = 1 << 3,
+}
+
+pub type OpTraitSet = enumflags2::BitFlags<OpTrait>;
+
 pub trait Op: Debug + 'static {
     #[inline]
     fn type_id(&self) -> TypeId {
@@ -44,8 +101,13 @@ pub trait Op: Debug + 'static {
         panic!("{self:?} not support normalize");
     }
 
-    fn simplify(&self, _terms: &[Term]) -> TermResult {
+    fn simplify(&self, _ctx: &SimplifyCtx, _terms: &[Term]) -> TermResult {
         None
+    }
+
+    #[inline]
+    fn traits(&self) -> OpTraitSet {
+        OpTraitSet::empty()
     }
 
     fn bitblast(&self, _terms: &[TermVec]) -> TermVec {
@@ -70,6 +132,19 @@ impl DynOp {
     #[inline]
     fn create(op: impl Op) -> Self {
         Self { op: Rc::new(op) }
+    }
+
+    #[inline]
+    pub fn simplify(&self, ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+        if let Some(res) = self.op.simplify(ctx, terms) {
+            return Some(res);
+        }
+        if self.op.traits().contains(OpTrait::Commutative) {
+            debug_assert!(terms.len() == 2);
+            let swapped = [terms[1].clone(), terms[0].clone()];
+            return self.op.simplify(ctx, &swapped);
+        }
+        None
     }
 }
 

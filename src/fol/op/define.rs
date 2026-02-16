@@ -19,9 +19,19 @@ macro_rules! op_trait_impl {
     };
     (simplify $impl:expr) => {
         #[inline]
-        fn simplify(&self, terms: &[crate::fol::Term]) -> crate::fol::TermResult {
+        fn simplify(
+            &self,
+            ctx: &crate::fol::op::SimplifyCtx,
+            terms: &[crate::fol::Term],
+        ) -> crate::fol::TermResult {
             debug_assert!(self.num_operand() == terms.len());
-            $impl(terms)
+            $impl(ctx, terms)
+        }
+    };
+    (traits $impl:expr) => {
+        #[inline]
+        fn traits(&self) -> crate::fol::op::OpTraitSet {
+            $impl
         }
     };
     (bitblast $impl:expr) => {

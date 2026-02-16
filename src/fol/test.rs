@@ -139,3 +139,51 @@ fn test_simulate_with_unknown() {
     // 1x00 & 1100 = 1x00 (x & 1 = x, x & 0 = 0)
     assert_bv_eq(&and_xy.simulate(&mut val), "1x00");
 }
+
+#[test]
+fn test_simplify_and_or_identities() {
+    let x = Term::new_var(Sort::Bv(1));
+
+    let and_expr = Term::bool_const(true) & &x;
+    let mut map = GHashMap::new();
+    assert_eq!(and_expr.simplify(&mut map), x);
+
+    let or_expr = Term::bool_const(false) | &x;
+    let mut map = GHashMap::new();
+    assert_eq!(or_expr.simplify(&mut map), x);
+
+    // Commutative fallback: ordered rule expects constants on the left.
+    let and_expr = &x & Term::bool_const(true);
+    let mut map = GHashMap::new();
+    assert_eq!(and_expr.simplify(&mut map), x);
+
+    let or_expr = &x | Term::bool_const(false);
+    let mut map = GHashMap::new();
+    assert_eq!(or_expr.simplify(&mut map), x);
+}
+
+#[test]
+fn test_simplify_xor_identities() {
+    let x = Term::new_var(Sort::Bv(1));
+
+    let xor0 = Term::bool_const(false) ^ &x;
+    let mut map = GHashMap::new();
+    assert_eq!(xor0.simplify(&mut map), x);
+
+    let xor1 = Term::bool_const(true) ^ &x;
+    let mut map = GHashMap::new();
+    assert_eq!(xor1.simplify(&mut map), !x.clone());
+
+    // Commutative fallback
+    let xor0 = &x ^ Term::bool_const(false);
+    let mut map = GHashMap::new();
+    assert_eq!(xor0.simplify(&mut map), x);
+}
+
+#[test]
+fn test_simplify_not_not() {
+    let x = Term::new_var(Sort::Bv(1));
+    let expr = !!&x;
+    let mut map = GHashMap::new();
+    assert_eq!(expr.simplify(&mut map), x);
+}
