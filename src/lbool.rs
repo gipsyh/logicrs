@@ -160,6 +160,11 @@ impl LboolVec {
     }
 
     #[inline]
+    pub fn any_x(&self) -> bool {
+        !self.mask().is_ones()
+    }
+
+    #[inline]
     pub fn v(&self) -> &BitVec {
         &self.v
     }
@@ -273,6 +278,13 @@ impl From<BitVec> for LboolVec {
             m: BitVec::from_elem(v.len(), true),
             v,
         }
+    }
+}
+
+impl From<LboolVec> for BitVec {
+    fn from(lbv: LboolVec) -> Self {
+        assert!(!lbv.any_x(), "LboolVec contains X values");
+        lbv.v
     }
 }
 

@@ -1,10 +1,23 @@
 use super::Term;
 use super::op::{OptLevel, SimplifyCtx};
 use crate::fol::TermResult;
+use crate::fol::Value;
 use crate::fol::op::{DynOp, OpTrait};
+use giputils::bitvec::BitVec;
 use giputils::hash::GHashMap;
 
 fn op_simplify(ctx: &SimplifyCtx, op: DynOp, terms: &[Term]) -> TermResult {
+    // Constant propagation
+    if terms.iter().all(|t| t.is_const()) {
+        let vals: Vec<Value> = terms
+            .iter()
+            .map(|t| Value::Bv(t.try_bv_const().unwrap().clone().into()))
+            .collect();
+        let result = op.simulate(&vals);
+        let lbv = result.into_bv().unwrap();
+        return Some(Term::bv_const(BitVec::from(lbv)));
+    }
+
     op.simplify(ctx, terms).or_else(|| {
         if op.traits().contains(OpTrait::Commutative) {
             debug_assert!(terms.len() == 2);
