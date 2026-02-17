@@ -49,9 +49,6 @@ fn and_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
             return Some(a.clone());
         }
     }
-    if a == b {
-        return Some(a.clone());
-    }
     if a == !b {
         return Some(a.mk_bv_const_zero());
     }
@@ -128,9 +125,6 @@ fn or_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         if ac.is_zero() {
             return Some(b.clone());
         }
-    }
-    if a == b {
-        return Some(a.clone());
     }
     if a == !b {
         return Some(a.mk_bv_const_ones());
