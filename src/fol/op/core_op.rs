@@ -10,22 +10,7 @@ fn bool_sort(_terms: &[Term]) -> Sort {
     Sort::Bv(1)
 }
 
-define_core_op!(Not, 1, traits: OpTrait::Involutive.into(), bitblast: not_bitblast, cnf_encode: not_cnf_encode, simplify: not_simplify, simulate: not_simulate);
-fn not_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
-    if !ctx.level.at_least(OptLevel::O1) {
-        return None;
-    }
-    let x = &terms[0];
-    if let Some(op) = x.try_op()
-        && op.op == Not
-    {
-        return Some(op[0].clone());
-    }
-    if let Some(xc) = x.try_bv_const() {
-        return Some(Term::bv_const(!xc));
-    }
-    None
-}
+define_core_op!(Not, 1, traits: OpTrait::Involutive.into(), bitblast: not_bitblast, cnf_encode: not_cnf_encode, simulate: not_simulate);
 fn not_bitblast(terms: &[TermVec]) -> TermVec {
     terms[0].iter().map(|t| !t).collect()
 }
@@ -34,7 +19,6 @@ fn not_cnf_encode(_dc: &mut DagCnf, terms: &[Lit]) -> Lit {
 }
 
 define_core_op!(And, 2, traits: OpTrait::Commutative | OpTrait::Associative | OpTrait::Idempotent, bitblast: and_bitblast, cnf_encode: and_cnf_encode, simplify: and_simplify, simulate: and_simulate);
-
 fn and_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     if !ctx.level.at_least(OptLevel::O1) {
         return None;
@@ -245,7 +229,6 @@ fn eq_cnf_encode(dc: &mut DagCnf, terms: &[Lit]) -> Lit {
 }
 
 define_core_op!(Ult, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify, simulate: ult_simulate);
-// define_core_op!(Usubo, 2, sort: bool_sort, bitblast: ult_bitblast, simplify: ult_simplify);
 fn ult_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     if !ctx.level.at_least(OptLevel::O1) {
         return None;

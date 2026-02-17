@@ -23,6 +23,14 @@ fn op_simplify(ctx: &SimplifyCtx, op: DynOp, terms: &[Term]) -> TermResult {
         return Some(terms[0].clone());
     }
 
+    // Involutive: op(op(a)) = a
+    if op.traits().contains(OpTrait::Involutive)
+        && let Some(inner_op) = terms[0].try_op()
+        && inner_op.op == op
+    {
+        return Some(inner_op.terms[0].clone());
+    }
+
     op.simplify(ctx, terms).or_else(|| {
         if op.traits().contains(OpTrait::Commutative) {
             debug_assert!(terms.len() == 2);
