@@ -1,14 +1,28 @@
 use super::Term;
 use super::op::{OptLevel, SimplifyCtx};
+use crate::fol::OpTerm;
+use crate::fol::op::OpTrait;
 use giputils::hash::GHashMap;
+
+impl OpTerm {
+    fn op_simplify(&self, ctx: &SimplifyCtx, terms: &[Term]) -> Term {
+        if let Some(res) = self.op.simplify(ctx, terms) {
+            return res;
+        }
+        if self.op.traits().contains(OpTrait::Commutative) {
+            debug_assert!(terms.len() == 2);
+            let swapped = [terms[1].clone(), terms[0].clone()];
+            if let Some(res) = self.op.simplify(ctx, &swapped) {
+                return res;
+            }
+        }
+        Term::new_op(self.op.clone(), terms)
+    }
+}
 
 impl Term {
     pub fn simplify(&self, map: &mut GHashMap<Term, Term>) -> Term {
         self.simplify_with_ctx(&SimplifyCtx::default(), map)
-    }
-
-    pub fn simplify_with_level(&self, level: OptLevel, map: &mut GHashMap<Term, Term>) -> Term {
-        self.simplify_with_ctx(&SimplifyCtx::new(level), map)
     }
 
     pub fn simplify_with_ctx(&self, ctx: &SimplifyCtx, map: &mut GHashMap<Term, Term>) -> Term {
@@ -24,11 +38,7 @@ impl Term {
                         .iter()
                         .map(|s| s.simplify_with_ctx(ctx, map))
                         .collect();
-                    if let Some(new) = op_term.op.simplify(ctx, &terms) {
-                        new
-                    } else {
-                        Term::new_op(op_term.op.clone(), &terms)
-                    }
+                    op_term.op_simplify(ctx, &terms)
                 } else {
                     self.clone()
                 }

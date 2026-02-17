@@ -133,19 +133,6 @@ impl DynOp {
     fn create(op: impl Op) -> Self {
         Self { op: Rc::new(op) }
     }
-
-    #[inline]
-    pub fn simplify(&self, ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
-        if let Some(res) = self.op.simplify(ctx, terms) {
-            return Some(res);
-        }
-        if self.op.traits().contains(OpTrait::Commutative) {
-            debug_assert!(terms.len() == 2);
-            let swapped = [terms[1].clone(), terms[0].clone()];
-            return self.op.simplify(ctx, &swapped);
-        }
-        None
-    }
 }
 
 impl<T: Op> From<T> for DynOp {
