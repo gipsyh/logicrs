@@ -23,6 +23,66 @@ fn msb_bit_term(term: &Term) -> Option<Term> {
     }
 }
 
+fn collect_assoc_terms(op: DynOp, term: &Term, out: &mut Vec<Term>) {
+    if let Some(top) = term.try_op()
+        && top.op == op
+    {
+        collect_assoc_terms(op.clone(), &top[0], out);
+        collect_assoc_terms(op, &top[1], out);
+        return;
+    }
+    out.push(term.clone());
+}
+
+fn slice_bit_literal(term: &Term) -> Option<(Term, usize, bool)> {
+    let (inner, positive) = if let Some(top) = term.try_op()
+        && top.op == Not
+    {
+        (&top[0], false)
+    } else {
+        (term, true)
+    };
+
+    let op = inner.try_op()?;
+    if op.op != Slice {
+        return None;
+    }
+    let base = op[0].clone();
+    let h = op[1].bv_len();
+    let l = op[2].bv_len();
+    if h != l {
+        return None;
+    }
+    Some((base, h, positive))
+}
+
+fn eq_slice_const(term: &Term) -> Option<(Term, usize, usize, Term)> {
+    let op = term.try_op()?;
+    if op.op != Eq {
+        return None;
+    }
+
+    let (slice, cst) = if op[0].try_bv_const().is_some() {
+        (&op[1], &op[0])
+    } else if op[1].try_bv_const().is_some() {
+        (&op[0], &op[1])
+    } else {
+        return None;
+    };
+
+    let sop = slice.try_op()?;
+    if sop.op != Slice {
+        return None;
+    }
+    let base = sop[0].clone();
+    let h = sop[1].bv_len();
+    let l = sop[2].bv_len();
+    if h < l {
+        return None;
+    }
+    Some((base, l, h, cst.clone()))
+}
+
 define_core_op!(Not, 1, traits: OpTrait::Involutive.into(), bitblast: not_bitblast, cnf_encode: not_cnf_encode, simulate: not_simulate);
 fn not_bitblast(terms: &[TermVec]) -> TermVec {
     terms[0].iter().map(|t| !t).collect()
@@ -88,6 +148,61 @@ fn and_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
                     return Some(&aop[0] | (&aop[1] & &bop[0]));
                 }
             }
+        }
+    }
+
+    // eq(slice(x, l1..h1), c1) & eq(slice(x, l2..h2), c2)
+    //  => eq(slice(x, min(l1,l2)..max(h1,h2)), concat(c_hi, c_lo))
+    if a.is_bool()
+        && let (Some((base1, l1, h1, c1)), Some((base2, l2, h2, c2))) =
+            (eq_slice_const(a), eq_slice_const(b))
+        && base1 == base2
+    {
+        if h1 + 1 == l2 {
+            let rhs = Term::new_op(Concat, [c2.clone(), c1.clone()]);
+            return Some(base1.slice(l1, h2).op1(Eq, &rhs));
+        }
+        if h2 + 1 == l1 {
+            let rhs = Term::new_op(Concat, [c1.clone(), c2.clone()]);
+            return Some(base1.slice(l2, h1).op1(Eq, &rhs));
+        }
+    }
+
+    // (x[i] & ... & x[j]) == <const> (bit-level equality reconstruction)
+    if a.is_bool() {
+        let mut leaves = Vec::new();
+        collect_assoc_terms(DynOp::from(And), a, &mut leaves);
+        collect_assoc_terms(DynOp::from(And), b, &mut leaves);
+
+        let mut base: Option<Term> = None;
+        let mut bits_by_idx = std::collections::BTreeMap::<usize, bool>::new();
+        for leaf in leaves.iter() {
+            let (b, idx, bit_is_one) = slice_bit_literal(leaf)?;
+            if let Some(ref bb) = base {
+                if *bb != b {
+                    return None;
+                }
+            } else {
+                base = Some(b);
+            }
+            if let Some(prev) = bits_by_idx.insert(idx, bit_is_one) {
+                if prev != bit_is_one {
+                    return Some(a.mk_bv_const_zero());
+                }
+            }
+        }
+        let base = base?;
+        let (lo, _) = bits_by_idx.first_key_value()?;
+        let (hi, _) = bits_by_idx.last_key_value()?;
+        let (lo, hi) = (*lo, *hi);
+        if bits_by_idx.len() == hi - lo + 1 {
+            let slice = base.slice(lo, hi);
+            let mut rhs = BitVec::zero(hi - lo + 1);
+            for (idx, bit_is_one) in bits_by_idx.iter() {
+                rhs.set(idx - lo, *bit_is_one);
+            }
+            let rhs = Term::bv_const(rhs);
+            return Some(slice.op1(Eq, &rhs));
         }
     }
     None
@@ -159,6 +274,45 @@ fn or_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
             if aop[0] == bop[1] {
                 return Some(&aop[0] & (&aop[1] | &bop[0]));
             }
+        }
+    }
+
+    // (x[i] | ... | x[j]) != <const> (bit-level clause reconstruction)
+    if a.is_bool() {
+        let mut leaves = Vec::new();
+        collect_assoc_terms(DynOp::from(Or), a, &mut leaves);
+        collect_assoc_terms(DynOp::from(Or), b, &mut leaves);
+
+        let mut base: Option<Term> = None;
+        let mut pol_by_idx = std::collections::BTreeMap::<usize, bool>::new();
+        for leaf in leaves.iter() {
+            let (b, idx, positive) = slice_bit_literal(leaf)?;
+            if let Some(ref bb) = base {
+                if *bb != b {
+                    return None;
+                }
+            } else {
+                base = Some(b);
+            }
+            if let Some(prev) = pol_by_idx.insert(idx, positive) {
+                if prev != positive {
+                    return Some(a.mk_bv_const_ones());
+                }
+            }
+        }
+        let base = base?;
+        let (lo, _) = pol_by_idx.first_key_value()?;
+        let (hi, _) = pol_by_idx.last_key_value()?;
+        let (lo, hi) = (*lo, *hi);
+        if pol_by_idx.len() == hi - lo + 1 {
+            let slice = base.slice(lo, hi);
+            // a clause is false only if every literal is false
+            let mut rhs = BitVec::zero(hi - lo + 1);
+            for (idx, positive) in pol_by_idx.iter() {
+                rhs.set(idx - lo, !positive);
+            }
+            let rhs = Term::bv_const(rhs);
+            return Some(!slice.op1(Eq, &rhs));
         }
     }
     None
