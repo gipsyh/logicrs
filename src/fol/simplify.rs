@@ -174,7 +174,7 @@ fn or_eq_term_consts_one_bit_diff(x: &Term, c1: &BitVec, c2: &BitVec) -> Option<
         for (idx, bit) in c1.iter().enumerate().skip(1) {
             c.set(idx - 1, bit);
         }
-        return Some(slice.op1(Eq, &Term::bv_const(c)));
+        return Some(slice.op1(Eq, Term::bv_const(c)));
     }
     if diff_idx == w - 1 {
         let slice = x.slice(0, w - 2);
@@ -182,7 +182,7 @@ fn or_eq_term_consts_one_bit_diff(x: &Term, c1: &BitVec, c2: &BitVec) -> Option<
         for (idx, bit) in c1.iter().enumerate().take(w - 1) {
             c.set(idx, bit);
         }
-        return Some(slice.op1(Eq, &Term::bv_const(c)));
+        return Some(slice.op1(Eq, Term::bv_const(c)));
     }
 
     // General case: mask out the differing bit.
@@ -235,21 +235,20 @@ impl RewriteRule for AndMergeNestedAnds {
         if aop.op != And {
             return None;
         }
-        if let Some(bop) = b.try_op()
-            && bop.op == And
-        {
+        if b == aop[0] {
+            return Some(b & &aop[1]);
+        }
+        if b == aop[1] {
+            return Some(b & &aop[0]);
+        }
+        let bop = b.try_op()?;
+        if bop.op == And {
             if aop[0] == bop[0] {
                 return Some(&aop[0] & &aop[1] & &bop[1]);
             }
             if aop[0] == bop[1] {
                 return Some(&aop[0] & &aop[1] & &bop[0]);
             }
-        }
-        if b == aop[0] {
-            return Some(b & &aop[1]);
-        }
-        if b == aop[1] {
-            return Some(b & &aop[0]);
         }
         None
     }
@@ -271,8 +270,8 @@ impl RewriteRule for AndDeMorganNotNot {
     }
 }
 
-struct AndAbsorbOr;
-impl RewriteRule for AndAbsorbOr {
+struct AndDistributeOverOr;
+impl RewriteRule for AndDistributeOverOr {
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -285,9 +284,8 @@ impl RewriteRule for AndAbsorbOr {
             return Some(b.clone());
         }
 
-        if let Some(bop) = b.try_op()
-            && bop.op == Or
-        {
+        let bop = b.try_op()?;
+        if bop.op == Or {
             if aop[0] == bop[0] {
                 return Some(&aop[0] | (&aop[1] & &bop[1]));
             }
@@ -379,7 +377,7 @@ pub(crate) fn and_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(AndComplement)
         .with_rule(AndMergeNestedAnds)
         .with_rule(AndDeMorganNotNot)
-        .with_rule(AndAbsorbOr)
+        .with_rule(AndDistributeOverOr)
         .with_rule(AndMergeAdjacentEqSliceConsts)
         .with_rule(AndBitLevelEqReconstruction);
     pipeline.apply(terms)
@@ -429,6 +427,15 @@ impl RewriteRule for OrMergeNestedOrs {
         if b == aop[1] {
             return Some(b | &aop[0]);
         }
+        let bop = b.try_op()?;
+        if bop.op == Or {
+            if aop[0] == bop[0] {
+                return Some(&aop[0] | &aop[1] | &bop[1]);
+            }
+            if aop[0] == bop[1] {
+                return Some(&aop[0] | &aop[1] | &bop[0]);
+            }
+        }
         None
     }
 }
@@ -474,21 +481,21 @@ impl RewriteRule for OrDistributeOverAnd {
         let a = &terms[0];
         let b = &terms[1];
         let aop = a.try_op()?;
-        if aop.op == And
-            && let Some(bop) = b.try_op()
-            && bop.op == And
-        {
+        if aop.op != And {
+            return None;
+        }
+
+        if aop[0] == *b || aop[1] == *b {
+            return Some(b.clone());
+        }
+
+        let bop = b.try_op()?;
+        if bop.op == And {
             if aop[0] == bop[0] {
                 return Some(&aop[0] & (&aop[1] | &bop[1]));
             }
             if aop[0] == bop[1] {
                 return Some(&aop[0] & (&aop[1] | &bop[0]));
-            }
-            if aop[1] == bop[0] {
-                return Some(&aop[1] & (&aop[0] | &bop[1]));
-            }
-            if aop[1] == bop[1] {
-                return Some(&aop[1] & (&aop[0] | &bop[0]));
             }
         }
         None
@@ -627,10 +634,10 @@ pub(crate) fn or_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(OrComplement)
         .with_rule(OrMergeNestedOrs)
         .with_rule(OrDeMorganNotNot)
+        .with_rule(OrDistributeOverAnd)
         .with_rule(OrAbsorbIteCond)
         .with_rule(OrMergeEqConstOneBitDiff)
         .with_rule(OrMergeEqConstOneBitDiffAssoc)
-        .with_rule(OrDistributeOverAnd)
         .with_rule(OrBitLevelClauseReconstruction);
     pipeline.apply(terms)
 }
@@ -761,7 +768,7 @@ impl RewriteRule for EqNotConst {
             for (idx, bit) in yc.iter().enumerate() {
                 nc.set(idx, !bit);
             }
-            return Some(xop[0].op1(Eq, &Term::bv_const(nc)));
+            return Some(xop[0].op1(Eq, Term::bv_const(nc)));
         }
 
         // eq(c, !x) => eq(x, !c) (symmetry)
@@ -773,7 +780,7 @@ impl RewriteRule for EqNotConst {
             for (idx, bit) in xc.iter().enumerate() {
                 nc.set(idx, !bit);
             }
-            return Some(yop[0].op1(Eq, &Term::bv_const(nc)));
+            return Some(yop[0].op1(Eq, Term::bv_const(nc)));
         }
 
         None
