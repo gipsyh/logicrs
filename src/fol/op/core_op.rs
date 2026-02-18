@@ -3,11 +3,24 @@ use super::simulate::*;
 use super::{DynOp, OpTrait, OptLevel, SimplifyCtx, Sort, Term, TermResult, TermVec};
 use crate::fol::op::define::define_core_fold_op;
 use crate::{DagCnf, Lit, LitVvec};
+use giputils::bitvec::BitVec;
 use std::slice;
 
 #[inline]
 fn bool_sort(_terms: &[Term]) -> Sort {
     Sort::Bv(1)
+}
+
+fn msb_bit_term(term: &Term) -> Option<Term> {
+    if term.bv_len() == 1 {
+        return Some(term.clone());
+    }
+    let op = term.try_op()?;
+    if op.op == Concat || op.op == Sext {
+        msb_bit_term(&op[0])
+    } else {
+        None
+    }
 }
 
 define_core_op!(Not, 1, traits: OpTrait::Involutive.into(), bitblast: not_bitblast, cnf_encode: not_cnf_encode, simulate: not_simulate);
@@ -517,6 +530,43 @@ fn concat_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         c.extend(xc.iter());
         return Some(Term::bv_const(c));
     }
+    // Sign extension by 1: concat(msb(y), y) = sext(y, 1)
+    if y.bv_len() != 0 && x.bv_len() == 1 {
+        if let Some(xop) = x.try_op()
+            && xop.op == Slice
+            && xop[0] == *y
+        {
+            let idx = y.bv_len() - 1;
+            if xop[1].bv_len() == idx && xop[2].bv_len() == idx {
+                return Some(Term::new_op(Sext, [y.clone(), Term::bool_const(false)]));
+            }
+        }
+        if let Some(yop) = y.try_op()
+            && yop.op == Sext
+            && let Some(xop) = x.try_op()
+            && xop.op == Slice
+            && xop[0] == yop[0]
+        {
+            let inner = &yop[0];
+            if inner.bv_len() != 0 {
+                let idx = inner.bv_len() - 1;
+                if xop[1].bv_len() == idx && xop[2].bv_len() == idx {
+                    return Some(Term::new_op(
+                        Sext,
+                        [
+                            inner.clone(),
+                            Term::bv_const(BitVec::zero(yop[1].bv_len() + 1)),
+                        ],
+                    ));
+                }
+            }
+        }
+        if let Some(msb) = msb_bit_term(y)
+            && msb == *x
+        {
+            return Some(Term::new_op(Sext, [y.clone(), Term::bool_const(false)]));
+        }
+    }
     None
 }
 fn concat_sort(terms: &[Term]) -> Sort {
@@ -528,7 +578,7 @@ fn concat_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-define_core_op!(Sext, 2, sort: sext_sort, bitblast: sext_bitblast, simulate: sext_simulate);
+define_core_op!(Sext, 2, sort: sext_sort, bitblast: sext_bitblast, simplify: sext_simplify, simulate: sext_simulate);
 fn sext_sort(terms: &[Term]) -> Sort {
     Sort::Bv(terms[0].bv_len() + terms[1].bv_len())
 }
@@ -538,6 +588,27 @@ fn sext_bitblast(terms: &[TermVec]) -> TermVec {
     let ext = vec![x[x.len() - 1].clone(); terms[1].len()];
     res.extend(ext);
     res
+}
+fn sext_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    if !ctx.level.at_least(OptLevel::O1) {
+        return None;
+    }
+    let x = &terms[0];
+    let ext = terms[1].bv_len();
+    if ext == 0 {
+        return Some(x.clone());
+    }
+    if let Some(xop) = x.try_op()
+        && xop.op == Sext
+    {
+        let inner = &xop[0];
+        let inner_ext = xop[1].bv_len();
+        return Some(Term::new_op(
+            Sext,
+            [inner.clone(), Term::bv_const(BitVec::zero(inner_ext + ext))],
+        ));
+    }
+    None
 }
 
 define_core_op!(Slice, 3, sort: slice_sort, bitblast: slice_bitblast, simplify: slice_simplify, simulate: slice_simulate);
@@ -556,8 +627,17 @@ fn slice_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let s = &terms[0];
     let l = terms[2].bv_len();
     let h = terms[1].bv_len();
-    if l == 0 && h == 0 && s.bv_len() == 1 {
+    if l == 0 && h == s.bv_len() - 1 {
         return Some(s.clone());
+    }
+    if let Some(sop) = s.try_op()
+        && sop.op == Slice
+    {
+        let base = &sop[0];
+        let inner_l = sop[2].bv_len();
+        let new_l = inner_l + l;
+        let new_h = inner_l + h;
+        return Some(base.slice(new_l, new_h));
     }
     None
 }
