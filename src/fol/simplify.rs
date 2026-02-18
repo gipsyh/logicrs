@@ -124,6 +124,79 @@ fn eq_slice_const(term: &Term) -> Option<(Term, usize, usize, Term)> {
     Some((base, l, h, cst.clone()))
 }
 
+fn eq_term_const(term: &Term) -> Option<(Term, BitVec)> {
+    let op = term.try_op()?;
+    if op.op != Eq {
+        return None;
+    }
+
+    if let Some(c) = op[0].try_bv_const() {
+        return Some((op[1].clone(), c.clone()));
+    }
+    if let Some(c) = op[1].try_bv_const() {
+        return Some((op[0].clone(), c.clone()));
+    }
+    None
+}
+
+fn single_bit_diff_idx(a: &BitVec, b: &BitVec) -> Option<usize> {
+    if a.len() != b.len() {
+        return None;
+    }
+    let mut diff_idx: Option<usize> = None;
+    for (idx, (b1, b2)) in a.iter().zip(b.iter()).enumerate() {
+        if b1 != b2 {
+            if diff_idx.is_some() {
+                return None;
+            }
+            diff_idx = Some(idx);
+        }
+    }
+    diff_idx
+}
+
+fn or_eq_term_consts_one_bit_diff(x: &Term, c1: &BitVec, c2: &BitVec) -> Option<Term> {
+    let w = c1.len();
+    if w == 0 || w != c2.len() || x.bv_len() != w {
+        return None;
+    }
+
+    let diff_idx = single_bit_diff_idx(c1, c2)?;
+    if w == 1 {
+        // (x == 0) | (x == 1) is a tautology.
+        return Some(Term::bool_const(true));
+    }
+
+    // If the differing bit is at an edge, prefer a slice-based rewrite (no mask const).
+    if diff_idx == 0 {
+        let slice = x.slice(1, w - 1);
+        let mut c = BitVec::zero(w - 1);
+        for (idx, bit) in c1.iter().enumerate().skip(1) {
+            c.set(idx - 1, bit);
+        }
+        return Some(slice.op1(Eq, &Term::bv_const(c)));
+    }
+    if diff_idx == w - 1 {
+        let slice = x.slice(0, w - 2);
+        let mut c = BitVec::zero(w - 1);
+        for (idx, bit) in c1.iter().enumerate().take(w - 1) {
+            c.set(idx, bit);
+        }
+        return Some(slice.op1(Eq, &Term::bv_const(c)));
+    }
+
+    // General case: mask out the differing bit.
+    let mut mask = BitVec::ones(w);
+    mask.set(diff_idx, false);
+    let mask = Term::bv_const(mask);
+    let masked = x & &mask;
+
+    let mut c = c1.clone();
+    c.set(diff_idx, false);
+    let c = Term::bv_const(c);
+    Some(masked.op1(Eq, &c))
+}
+
 struct AndConstPropagation;
 impl RewriteRule for AndConstPropagation {
     fn apply(&self, terms: &[Term]) -> TermResult {
@@ -411,7 +484,90 @@ impl RewriteRule for OrDistributeOverAnd {
             if aop[0] == bop[1] {
                 return Some(&aop[0] & (&aop[1] | &bop[0]));
             }
+            if aop[1] == bop[0] {
+                return Some(&aop[1] & (&aop[0] | &bop[1]));
+            }
+            if aop[1] == bop[1] {
+                return Some(&aop[1] & (&aop[0] | &bop[0]));
+            }
         }
+        None
+    }
+}
+
+struct OrMergeEqConstOneBitDiff;
+impl RewriteRule for OrMergeEqConstOneBitDiff {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let a = &terms[0];
+        let b = &terms[1];
+
+        // (x == c1) | (x == c2) where c1,c2 differ by exactly one bit.
+        let (x, c1) = eq_term_const(a)?;
+        let (y, c2) = eq_term_const(b)?;
+        if x != y {
+            return None;
+        }
+        or_eq_term_consts_one_bit_diff(&x, &c1, &c2)
+    }
+}
+
+struct OrMergeEqConstOneBitDiffAssoc;
+impl RewriteRule for OrMergeEqConstOneBitDiffAssoc {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O2
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let a = &terms[0];
+        let b = &terms[1];
+        if !a.is_bool() {
+            return None;
+        }
+
+        let mut leaves = Vec::new();
+        collect_assoc_terms(DynOp::from(Or), a, &mut leaves);
+        collect_assoc_terms(DynOp::from(Or), b, &mut leaves);
+        if leaves.len() <= 2 {
+            return None;
+        }
+
+        let mut seen = GHashMap::<Term, Vec<(usize, BitVec)>>::new();
+        for (idx, leaf) in leaves.iter().enumerate() {
+            let Some((t, c)) = eq_term_const(leaf) else {
+                continue;
+            };
+
+            if let Some(prevs) = seen.get(&t) {
+                for (prev_idx, prev_c) in prevs.iter() {
+                    if let Some(merged) = or_eq_term_consts_one_bit_diff(&t, prev_c, &c) {
+                        let (i, j) = if *prev_idx < idx {
+                            (*prev_idx, idx)
+                        } else {
+                            (idx, *prev_idx)
+                        };
+                        let mut new_leaves = Vec::with_capacity(leaves.len() - 1);
+                        for (k, leaf) in leaves.iter().enumerate() {
+                            if k == i {
+                                new_leaves.push(merged.clone());
+                            } else if k == j {
+                                continue;
+                            } else {
+                                new_leaves.push(leaf.clone());
+                            }
+                        }
+
+                        let mut acc = new_leaves[0].clone();
+                        for leaf in new_leaves.iter().skip(1) {
+                            acc = &acc | leaf;
+                        }
+                        return Some(acc);
+                    }
+                }
+            }
+
+            seen.entry(t).or_default().push((idx, c));
+        }
+
         None
     }
 }
@@ -472,6 +628,8 @@ pub(crate) fn or_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(OrMergeNestedOrs)
         .with_rule(OrDeMorganNotNot)
         .with_rule(OrAbsorbIteCond)
+        .with_rule(OrMergeEqConstOneBitDiff)
+        .with_rule(OrMergeEqConstOneBitDiffAssoc)
         .with_rule(OrDistributeOverAnd)
         .with_rule(OrBitLevelClauseReconstruction);
     pipeline.apply(terms)
@@ -579,11 +737,81 @@ impl RewriteRule for EqComplement {
     }
 }
 
+struct EqNotConst;
+impl RewriteRule for EqNotConst {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+
+        // eq(!x, !y) => eq(x, y)
+        if let Some(xop) = x.try_op()
+            && xop.op == Not
+            && let Some(yop) = y.try_op()
+            && yop.op == Not
+        {
+            return Some(xop[0].op1(Eq, &yop[0]));
+        }
+
+        // eq(!x, c) => eq(x, !c) (push Not into constant)
+        if let Some(yc) = y.try_bv_const()
+            && let Some(xop) = x.try_op()
+            && xop.op == Not
+        {
+            let mut nc = BitVec::zero(yc.len());
+            for (idx, bit) in yc.iter().enumerate() {
+                nc.set(idx, !bit);
+            }
+            return Some(xop[0].op1(Eq, &Term::bv_const(nc)));
+        }
+
+        // eq(c, !x) => eq(x, !c) (symmetry)
+        if let Some(xc) = x.try_bv_const()
+            && let Some(yop) = y.try_op()
+            && yop.op == Not
+        {
+            let mut nc = BitVec::zero(xc.len());
+            for (idx, bit) in xc.iter().enumerate() {
+                nc.set(idx, !bit);
+            }
+            return Some(yop[0].op1(Eq, &Term::bv_const(nc)));
+        }
+
+        None
+    }
+}
+
+struct EqXorZero;
+impl RewriteRule for EqXorZero {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+
+        // eq(xor(a,b), 0) => eq(a,b)
+        let (xor_term, cst) = if let Some(xc) = x.try_bv_const() {
+            (y, xc)
+        } else if let Some(yc) = y.try_bv_const() {
+            (x, yc)
+        } else {
+            return None;
+        };
+        if !cst.is_zero() {
+            return None;
+        }
+        let xop = xor_term.try_op()?;
+        if xop.op != Xor {
+            return None;
+        }
+        Some(xop[0].op1(Eq, &xop[1]))
+    }
+}
+
 pub(crate) fn eq_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(EqBoolViaXor)
         .with_rule(EqRefl)
-        .with_rule(EqComplement);
+        .with_rule(EqComplement)
+        .with_rule(EqNotConst)
+        .with_rule(EqXorZero);
     pipeline.apply(terms)
 }
 
