@@ -15,26 +15,6 @@ trait RewriteRule {
     fn apply(&self, terms: &[Term]) -> TermResult;
 }
 
-struct NotXorBoolToEq;
-impl RewriteRule for NotXorBoolToEq {
-    fn apply(&self, terms: &[Term]) -> TermResult {
-        let x = &terms[0];
-        if !x.is_bool() {
-            return None;
-        }
-        let xop = x.try_op()?;
-        if xop.op != Xor {
-            return None;
-        }
-        Some(xop[0].op1(Eq, &xop[1]))
-    }
-}
-
-pub(crate) fn not_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
-    let pipeline = RewritePipeline::new(ctx.level).with_rule(NotXorBoolToEq);
-    pipeline.apply(terms)
-}
-
 struct RewritePipeline {
     level: OptLevel,
     rules: Vec<Box<dyn RewriteRule>>,
@@ -215,6 +195,26 @@ fn or_eq_term_consts_one_bit_diff(x: &Term, c1: &BitVec, c2: &BitVec) -> Option<
     c.set(diff_idx, false);
     let c = Term::bv_const(c);
     Some(masked.op1(Eq, &c))
+}
+
+struct NotXorBoolToEq;
+impl RewriteRule for NotXorBoolToEq {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        if !x.is_bool() {
+            return None;
+        }
+        let xop = x.try_op()?;
+        if xop.op != Xor {
+            return None;
+        }
+        Some(xop[0].op1(Eq, &xop[1]))
+    }
+}
+
+pub(crate) fn not_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    let pipeline = RewritePipeline::new(ctx.level).with_rule(NotXorBoolToEq);
+    pipeline.apply(terms)
 }
 
 struct AndConstPropagation;
