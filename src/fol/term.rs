@@ -1,6 +1,6 @@
 use super::op::{Add, And, Ite, Neg, Not, Or, Sub, Xor};
 use super::{op::DynOp, sort::Sort};
-use crate::fol::op::{Concat, Slice};
+use crate::fol::op::{Concat, OpTrait, Slice};
 use crate::fol::{TermVec, Value, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
@@ -14,10 +14,15 @@ use std::{hash::Hash, ops::Deref};
 
 #[derive(Clone)]
 pub struct Term {
-    pub(crate) inner: Grc<TermInner>,
+    inner: Grc<TermInner>,
 }
 
 impl Term {
+    #[inline]
+    pub fn id(&self) -> usize {
+        self.inner.id
+    }
+
     #[inline]
     pub fn bool_const(c: bool) -> Term {
         tm().new_term(TermType::Const(BitVec::from(&[c])), Sort::Bv(1))
@@ -32,10 +37,13 @@ impl Term {
     #[inline]
     pub fn new_op(op: impl Into<DynOp>, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
         let op: DynOp = op.into();
-        let terms: Vec<Term> = terms.into_iter().map(|t| t.as_ref().clone()).collect();
+        let mut terms: Vec<Term> = terms.into_iter().map(|t| t.as_ref().clone()).collect();
         debug_assert!(!terms.is_empty());
         if !op.is_core() {
             return op.normalize(&terms);
+        }
+        if op.traits().contains(OpTrait::Commutative) {
+            terms.sort_by_key(|t| t.id());
         }
         let sort = op.sort(&terms);
         let term = TermType::Op(OpTerm::new(op, terms));
@@ -272,7 +280,7 @@ impl Deref for Term {
 impl Hash for Term {
     #[inline]
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.inner.hash(state);
+        self.id().hash(state);
     }
 }
 
@@ -386,7 +394,8 @@ impl_biops!(BitXor, bitxor, Xor);
 impl_biops!(Add, add, Add);
 impl_biops!(Sub, sub, Sub);
 
-pub struct TermInner {
+struct TermInner {
+    id: usize,
     sort: Sort,
     ty: TermType,
 }
@@ -472,6 +481,7 @@ impl TermGC {
 struct TermManager {
     _tgc: TermGC,
     avl_vid: usize,
+    avl_tid: usize,
     map: GHashMap<TermType, Term>,
 }
 
@@ -483,6 +493,7 @@ impl TermManager {
                 garbage: Vec::new(),
             },
             avl_vid: 0,
+            avl_tid: 0,
             map: GHashMap::new(),
         }
     }
@@ -492,8 +503,11 @@ impl TermManager {
         match self.map.get(&ty) {
             Some(term) => term.clone(),
             None => {
+                let id = self.avl_tid;
+                self.avl_tid += 1;
                 let term = Term {
                     inner: Grc::new(TermInner {
+                        id,
                         sort,
                         ty: ty.clone(),
                     }),
