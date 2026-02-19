@@ -15,6 +15,26 @@ trait RewriteRule {
     fn apply(&self, terms: &[Term]) -> TermResult;
 }
 
+struct NotXorBoolToEq;
+impl RewriteRule for NotXorBoolToEq {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        if !x.is_bool() {
+            return None;
+        }
+        let xop = x.try_op()?;
+        if xop.op != Xor {
+            return None;
+        }
+        Some(xop[0].op1(Eq, &xop[1]))
+    }
+}
+
+pub(crate) fn not_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    let pipeline = RewritePipeline::new(ctx.level).with_rule(NotXorBoolToEq);
+    pipeline.apply(terms)
+}
+
 struct RewritePipeline {
     level: OptLevel,
     rules: Vec<Box<dyn RewriteRule>>,
@@ -249,6 +269,12 @@ impl RewriteRule for AndMergeNestedAnds {
             if aop[0] == bop[1] {
                 return Some(&aop[0] & &aop[1] & &bop[0]);
             }
+            if aop[1] == bop[0] {
+                return Some(&aop[1] & &aop[0] & &bop[1]);
+            }
+            if aop[1] == bop[1] {
+                return Some(&aop[1] & &aop[0] & &bop[0]);
+            }
         }
         None
     }
@@ -265,6 +291,34 @@ impl RewriteRule for AndDeMorganNotNot {
             && bop.op == Not
         {
             return Some(!(&aop[0] | &bop[0]));
+        }
+        None
+    }
+}
+
+struct AndAbsorbComplementInOr;
+impl RewriteRule for AndAbsorbComplementInOr {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let a = &terms[0];
+        let b = &terms[1];
+        let bop = b.try_op()?;
+        if bop.op != Or {
+            return None;
+        }
+
+        let not_a = !a.clone();
+        if bop[0] == not_a {
+            return Some(a & &bop[1]);
+        }
+        if bop[1] == not_a {
+            return Some(a & &bop[0]);
+        }
+
+        if a == !&bop[0] {
+            return Some(a & &bop[1]);
+        }
+        if a == !&bop[1] {
+            return Some(a & &bop[0]);
         }
         None
     }
@@ -291,6 +345,12 @@ impl RewriteRule for AndDistributeOverOr {
             }
             if aop[0] == bop[1] {
                 return Some(&aop[0] | (&aop[1] & &bop[0]));
+            }
+            if aop[1] == bop[0] {
+                return Some(&aop[1] | (&aop[0] & &bop[1]));
+            }
+            if aop[1] == bop[1] {
+                return Some(&aop[1] | (&aop[0] & &bop[0]));
             }
         }
         None
@@ -371,15 +431,87 @@ impl RewriteRule for AndBitLevelEqReconstruction {
     }
 }
 
+struct AndBitLevelMaskedEqReconstruction;
+impl RewriteRule for AndBitLevelMaskedEqReconstruction {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O2
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let a = &terms[0];
+        let b = &terms[1];
+
+        // (x[i]=c1) & (x[j]=c2) & ...  =>  ((slice(x, lo..hi) & mask) == rhs)
+        // Works even when indices are not contiguous (mask has zeros for gaps).
+        if !a.is_bool() {
+            return None;
+        }
+
+        let mut leaves = Vec::new();
+        collect_assoc_terms(DynOp::from(And), a, &mut leaves);
+        collect_assoc_terms(DynOp::from(And), b, &mut leaves);
+
+        let mut base: Option<Term> = None;
+        let mut bits_by_idx = std::collections::BTreeMap::<usize, bool>::new();
+        for leaf in leaves.iter() {
+            let (b, idx, bit_is_one) = slice_bit_literal(leaf)?;
+            if let Some(ref bb) = base {
+                if *bb != b {
+                    return None;
+                }
+            } else {
+                base = Some(b);
+            }
+            if let Some(prev) = bits_by_idx.insert(idx, bit_is_one)
+                && prev != bit_is_one
+            {
+                return Some(a.mk_bv_const_zero());
+            }
+        }
+
+        // Heuristic: only rewrite when there are enough constrained bits to offset
+        // the extra mask/eq/slice nodes this introduces.
+        if bits_by_idx.len() < 8 {
+            return None;
+        }
+
+        let base = base?;
+        let (lo, _) = bits_by_idx.first_key_value()?;
+        let (hi, _) = bits_by_idx.last_key_value()?;
+        let (lo, hi) = (*lo, *hi);
+        let w = hi - lo + 1;
+
+        let slice = base.slice(lo, hi);
+        let mut mask = BitVec::zero(w);
+        let mut rhs = BitVec::zero(w);
+        for (idx, bit_is_one) in bits_by_idx.iter() {
+            let pos = idx - lo;
+            mask.set(pos, true);
+            rhs.set(pos, *bit_is_one);
+        }
+        let rhs = Term::bv_const(rhs);
+
+        if mask.is_ones() {
+            return Some(slice.op1(Eq, &rhs));
+        }
+
+        let mask = Term::bv_const(mask);
+        let masked = &slice & &mask;
+        Some(masked.op1(Eq, &rhs))
+    }
+}
+
 pub(crate) fn and_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(AndConstPropagation)
         .with_rule(AndComplement)
         .with_rule(AndMergeNestedAnds)
         .with_rule(AndDeMorganNotNot)
+        .with_rule(AndAbsorbComplementInOr)
         .with_rule(AndDistributeOverOr)
         .with_rule(AndMergeAdjacentEqSliceConsts)
-        .with_rule(AndBitLevelEqReconstruction);
+        .with_rule(AndBitLevelEqReconstruction)
+        .with_rule(AndBitLevelMaskedEqReconstruction);
     pipeline.apply(terms)
 }
 
@@ -435,6 +567,12 @@ impl RewriteRule for OrMergeNestedOrs {
             if aop[0] == bop[1] {
                 return Some(&aop[0] | &aop[1] | &bop[0]);
             }
+            if aop[1] == bop[0] {
+                return Some(&aop[1] | &aop[0] | &bop[1]);
+            }
+            if aop[1] == bop[1] {
+                return Some(&aop[1] | &aop[0] | &bop[0]);
+            }
         }
         None
     }
@@ -451,6 +589,34 @@ impl RewriteRule for OrDeMorganNotNot {
             && bop.op == Not
         {
             return Some(!(&aop[0] & &bop[0]));
+        }
+        None
+    }
+}
+
+struct OrAbsorbComplementInAnd;
+impl RewriteRule for OrAbsorbComplementInAnd {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let a = &terms[0];
+        let b = &terms[1];
+        let bop = b.try_op()?;
+        if bop.op != And {
+            return None;
+        }
+
+        let not_a = !a.clone();
+        if bop[0] == not_a {
+            return Some(a | &bop[1]);
+        }
+        if bop[1] == not_a {
+            return Some(a | &bop[0]);
+        }
+
+        if a == !&bop[0] {
+            return Some(a | &bop[1]);
+        }
+        if a == !&bop[1] {
+            return Some(a | &bop[0]);
         }
         None
     }
@@ -496,6 +662,12 @@ impl RewriteRule for OrDistributeOverAnd {
             }
             if aop[0] == bop[1] {
                 return Some(&aop[0] & (&aop[1] | &bop[0]));
+            }
+            if aop[1] == bop[0] {
+                return Some(&aop[1] & (&aop[0] | &bop[1]));
+            }
+            if aop[1] == bop[1] {
+                return Some(&aop[1] & (&aop[0] | &bop[0]));
             }
         }
         None
@@ -628,17 +800,90 @@ impl RewriteRule for OrBitLevelClauseReconstruction {
     }
 }
 
+struct OrBitLevelMaskedClauseReconstruction;
+impl RewriteRule for OrBitLevelMaskedClauseReconstruction {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O2
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let a = &terms[0];
+        let b = &terms[1];
+
+        // (x[i] | ... | x[j]) != <const> (bit-level clause reconstruction with gaps)
+        // (x[i]=p1) | (x[j]=p2) | ...  =>  !((slice(x, lo..hi) & mask) == rhs)
+        // where rhs encodes the unique assignment that falsifies every literal.
+        if !a.is_bool() {
+            return None;
+        }
+
+        let mut leaves = Vec::new();
+        collect_assoc_terms(DynOp::from(Or), a, &mut leaves);
+        collect_assoc_terms(DynOp::from(Or), b, &mut leaves);
+
+        let mut base: Option<Term> = None;
+        let mut pol_by_idx = std::collections::BTreeMap::<usize, bool>::new();
+        for leaf in leaves.iter() {
+            let (b, idx, positive) = slice_bit_literal(leaf)?;
+            if let Some(ref bb) = base {
+                if *bb != b {
+                    return None;
+                }
+            } else {
+                base = Some(b);
+            }
+            if let Some(prev) = pol_by_idx.insert(idx, positive)
+                && prev != positive
+            {
+                return Some(a.mk_bv_const_ones());
+            }
+        }
+
+        // Heuristic: only rewrite when there are enough constrained bits to offset
+        // the extra mask/eq/slice nodes this introduces.
+        if pol_by_idx.len() < 8 {
+            return None;
+        }
+
+        let base = base?;
+        let (lo, _) = pol_by_idx.first_key_value()?;
+        let (hi, _) = pol_by_idx.last_key_value()?;
+        let (lo, hi) = (*lo, *hi);
+        let w = hi - lo + 1;
+
+        let slice = base.slice(lo, hi);
+        let mut mask = BitVec::zero(w);
+        let mut rhs = BitVec::zero(w);
+        for (idx, positive) in pol_by_idx.iter() {
+            let pos = idx - lo;
+            mask.set(pos, true);
+            rhs.set(pos, !positive);
+        }
+        let rhs = Term::bv_const(rhs);
+
+        if mask.is_ones() {
+            return Some(!slice.op1(Eq, &rhs));
+        }
+
+        let mask = Term::bv_const(mask);
+        let masked = &slice & &mask;
+        Some(!masked.op1(Eq, &rhs))
+    }
+}
+
 pub(crate) fn or_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(OrConstPropagation)
         .with_rule(OrComplement)
         .with_rule(OrMergeNestedOrs)
         .with_rule(OrDeMorganNotNot)
+        .with_rule(OrAbsorbComplementInAnd)
         .with_rule(OrDistributeOverAnd)
         .with_rule(OrAbsorbIteCond)
         .with_rule(OrMergeEqConstOneBitDiff)
         .with_rule(OrMergeEqConstOneBitDiffAssoc)
-        .with_rule(OrBitLevelClauseReconstruction);
+        .with_rule(OrBitLevelClauseReconstruction)
+        .with_rule(OrBitLevelMaskedClauseReconstruction);
     pipeline.apply(terms)
 }
 
@@ -899,6 +1144,26 @@ impl RewriteRule for IteNotCondSwap {
     }
 }
 
+struct IteBoolComplementBranches;
+impl RewriteRule for IteBoolComplementBranches {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
+        if !t.is_bool() {
+            return None;
+        }
+
+        // ite(c, x, !x) => eq(c, x)
+        if e == !t {
+            return Some(c.op1(Eq, t));
+        }
+        // ite(c, !x, x) => xor(c, x)
+        if t == !e {
+            return Some(c ^ e);
+        }
+        None
+    }
+}
+
 struct IteBoolBranchConst;
 impl RewriteRule for IteBoolBranchConst {
     fn apply(&self, terms: &[Term]) -> TermResult {
@@ -932,6 +1197,7 @@ pub(crate) fn ite_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(IteConstCond)
         .with_rule(IteSameBranches)
         .with_rule(IteNotCondSwap)
+        .with_rule(IteBoolComplementBranches)
         .with_rule(IteBoolBranchConst);
     pipeline.apply(terms)
 }
@@ -945,6 +1211,26 @@ impl RewriteRule for ConcatConst {
         let mut c = yc.clone();
         c.extend(xc.iter());
         Some(Term::bv_const(c))
+    }
+}
+
+struct ConcatAssocConstPrefix;
+impl RewriteRule for ConcatAssocConstPrefix {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+
+        // concat(c1, concat(c2, t)) => concat(concat(c1,c2), t)
+        // (exposes constant folding on concat(c1,c2))
+        x.try_bv_const()?;
+        let yop = y.try_op()?;
+        if yop.op != Concat {
+            return None;
+        }
+        yop[0].try_bv_const()?;
+
+        let hi = Term::new_op(Concat, [x.clone(), yop[0].clone()]);
+        Some(hi.op1(Concat, &yop[1]))
     }
 }
 
@@ -1023,6 +1309,7 @@ impl RewriteRule for ConcatSignExtByMsbTerm {
 pub(crate) fn concat_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(ConcatConst)
+        .with_rule(ConcatAssocConstPrefix)
         .with_rule(ConcatSignExtBySlice)
         .with_rule(ConcatSignExtBySextSlice)
         .with_rule(ConcatSignExtByMsbTerm);

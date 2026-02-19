@@ -11,7 +11,7 @@ fn bool_sort(_terms: &[Term]) -> Sort {
     Sort::Bv(1)
 }
 
-define_core_op!(Not, 1, traits: OpTrait::Involutive.into(), bitblast: not_bitblast, cnf_encode: not_cnf_encode, simulate: not_simulate);
+define_core_op!(Not, 1, traits: OpTrait::Involutive.into(), bitblast: not_bitblast, cnf_encode: not_cnf_encode, simplify: not_simplify, simulate: not_simulate);
 fn not_cnf_encode(_dc: &mut DagCnf, terms: &[Lit]) -> Lit {
     !terms[0]
 }
