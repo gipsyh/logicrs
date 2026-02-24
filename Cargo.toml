@@ -13,7 +13,7 @@ keywords = ["logic"]
 [dependencies]
 giputils = { path = "../giputils", version = "0.3.6" }
 ahash = "0.8.11"
-rand = "0.9.1"
+rand = "0.10"
 log = "0.4.27"
 lazy_static = "1.5.0"
 inventory = "0.3.20"
