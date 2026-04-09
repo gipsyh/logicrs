@@ -318,8 +318,7 @@ impl AsRef<Term> for Term {
 impl Drop for Term {
     #[inline]
     fn drop(&mut self) {
-        // let g = self.clone();
-        // tm().tgc.collect(g);
+        // Terms are reclaimed explicitly through `garbage_collect()`.
     }
 }
 
@@ -466,20 +465,7 @@ impl Index<usize> for OpTerm {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Eq, Debug)]
-pub struct TermGC {
-    garbage: Vec<Term>,
-}
-
-impl TermGC {
-    #[inline]
-    pub fn collect(&mut self, term: Term) {
-        self.garbage.push(term);
-    }
-}
-
 struct TermManager {
-    _tgc: TermGC,
     avl_vid: usize,
     avl_tid: usize,
     map: GHashMap<TermType, Term>,
@@ -489,9 +475,6 @@ impl TermManager {
     #[inline]
     fn new() -> Self {
         Self {
-            _tgc: TermGC {
-                garbage: Vec::new(),
-            },
             avl_vid: 0,
             avl_tid: 0,
             map: GHashMap::new(),
@@ -527,8 +510,18 @@ impl TermManager {
     }
 
     #[inline]
-    #[allow(unused)]
-    fn garbage_collect(&mut self) {}
+    fn garbage_collect(&mut self) -> usize {
+        let mut removed = 0;
+        loop {
+            let before = self.map.len();
+            self.map.retain(|_, term| term.inner.count() > 1);
+            let collected = before - self.map.len();
+            if collected == 0 {
+                return removed;
+            }
+            removed += collected;
+        }
+    }
 }
 
 thread_local! {
@@ -538,4 +531,10 @@ thread_local! {
 #[inline]
 fn tm() -> &'static mut TermManager {
     TERM_MANAGER.with(|m| unsafe { &mut *m.get() })
+}
+
+/// Collect unreachable interned terms for the current thread.
+#[inline]
+pub fn term_gc() -> usize {
+    tm().garbage_collect()
 }

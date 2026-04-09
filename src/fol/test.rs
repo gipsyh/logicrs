@@ -187,3 +187,40 @@ fn test_simplify_not_not() {
     let mut map = GHashMap::new();
     assert_eq!(expr.simplify(&mut map), x);
 }
+
+#[test]
+fn test_manual_gc_reclaims_dropped_term() {
+    super::term_gc();
+
+    let x = Term::new_var(Sort::Bv(1));
+    let y = Term::new_var(Sort::Bv(1));
+    let expr = &x & &y;
+    let expr_id = expr.id();
+
+    drop(expr);
+    assert!(super::term_gc() >= 1);
+
+    let expr2 = &x & &y;
+    assert_ne!(expr_id, expr2.id());
+}
+
+#[test]
+fn test_manual_gc_reaches_fixed_point() {
+    super::term_gc();
+
+    let x = Term::new_var(Sort::Bv(1));
+    let y = Term::new_var(Sort::Bv(1));
+    let leaf = &x & &y;
+    let leaf_id = leaf.id();
+    let root = &leaf | Term::bool_const(true);
+    let root_id = root.id();
+
+    drop(root);
+    drop(leaf);
+    assert!(super::term_gc() >= 2);
+
+    let leaf2 = &x & &y;
+    let root2 = &leaf2 | Term::bool_const(true);
+    assert_ne!(leaf_id, leaf2.id());
+    assert_ne!(root_id, root2.id());
+}
