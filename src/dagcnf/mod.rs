@@ -4,6 +4,7 @@ mod top;
 
 use crate::{Lit, LitVec, LitVvec, Var, VarLMap, VarMap, VarRange, VarVMap};
 use giputils::hash::GHashSet;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     iter::{Flatten, Zip, once},
@@ -11,7 +12,7 @@ use std::{
     slice,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DagCnf {
     max_var: Var,
     cnf: VarMap<LitVvec>,

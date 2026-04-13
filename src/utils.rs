@@ -1,5 +1,6 @@
 use crate::{LboolVec, Lit, Var, VarRange};
 use giputils::hash::GHashMap;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Debug, Display},
     mem::take,
@@ -7,7 +8,7 @@ use std::{
     ptr, slice,
 };
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct VarMap<T> {
     map: Vec<T>,
 }
