@@ -83,6 +83,13 @@ impl From<Lit> for Var {
     }
 }
 
+impl From<&Lit> for Var {
+    #[inline]
+    fn from(value: &Lit) -> Self {
+        value.var()
+    }
+}
+
 impl Deref for Var {
     type Target = u32;
 
