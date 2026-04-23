@@ -83,6 +83,16 @@ impl DagCnf {
         &self.dep[n]
     }
 
+    pub fn refs(&self) -> VarMap<Vec<Var>> {
+        let mut refs: VarMap<Vec<Var>> = VarMap::new_with(self.max_var);
+        for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
+            for &dep in self.dep[v].iter() {
+                refs[dep].push(v);
+            }
+        }
+        refs
+    }
+
     #[inline]
     pub fn iter(&self) -> Zip<VarRange, std::slice::Iter<'_, LitVvec>> {
         VarRange::new_inclusive(Var::CONST, self.max_var).zip(self.cnf.iter())
