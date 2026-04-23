@@ -106,6 +106,13 @@ impl AsMut<Var> for Var {
     }
 }
 
+impl Into<Var> for &Var {
+    #[inline]
+    fn into(self) -> Var {
+        *self
+    }
+}
+
 impl Display for Var {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -337,6 +344,13 @@ impl AsMut<Lit> for Lit {
     #[inline]
     fn as_mut(&mut self) -> &mut Lit {
         self
+    }
+}
+
+impl Into<Lit> for &Lit {
+    #[inline]
+    fn into(self) -> Lit {
+        *self
     }
 }
 
