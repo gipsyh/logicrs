@@ -52,11 +52,11 @@ impl Cnf {
         &self.cls
     }
 
-    pub fn rearrange(&mut self, additional: impl IntoIterator<Item = impl AsRef<Var>>) -> VarVMap {
+    pub fn rearrange(&mut self, additional: impl IntoIterator<Item = impl Into<Var>>) -> VarVMap {
         let mut domain = GHashSet::from_iter(
             additional
                 .into_iter()
-                .map(|l| *l.as_ref())
+                .map(|l| l.into())
                 .chain(once(Var::CONST)),
         );
         for cls in self.cls.iter() {
@@ -85,17 +85,17 @@ impl Cnf {
     }
 
     #[inline]
-    pub fn new_and(&mut self, ands: impl IntoIterator<Item = impl AsRef<Lit>>) -> Lit {
+    pub fn new_and(&mut self, ands: impl IntoIterator<Item = impl Into<Lit>>) -> Lit {
         let mut and = Vec::new();
         for a in ands.into_iter() {
-            let a = a.as_ref();
+            let a = a.into();
             if a.is_constant(true) {
                 continue;
             }
             if a.is_constant(false) {
                 return Lit::constant(false);
             }
-            and.push(*a);
+            and.push(a);
         }
         if and.is_empty() {
             Lit::constant(true)
@@ -109,17 +109,17 @@ impl Cnf {
     }
 
     #[inline]
-    pub fn new_or(&mut self, ors: impl IntoIterator<Item = impl AsRef<Lit>>) -> Lit {
+    pub fn new_or(&mut self, ors: impl IntoIterator<Item = impl Into<Lit>>) -> Lit {
         let mut or = Vec::new();
         for o in ors.into_iter() {
-            let o = o.as_ref();
+            let o = o.into();
             if o.is_constant(false) {
                 continue;
             }
             if o.is_constant(true) {
                 return Lit::constant(true);
             }
-            or.push(*o);
+            or.push(o);
         }
         if or.is_empty() {
             Lit::constant(false)

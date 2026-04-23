@@ -123,11 +123,11 @@ impl VarBitVec {
     pub fn assign(
         &self,
         idx: usize,
-        filter: Option<impl IntoIterator<Item = impl AsRef<Var>>>,
+        filter: Option<impl IntoIterator<Item = impl Into<Var>>>,
     ) -> LitVec {
         let mut assump = LitVec::new();
         if let Some(filter) = filter {
-            for v in filter.into_iter().map(|v| *v.as_ref()) {
+            for v in filter.into_iter().map(|v| v.into()) {
                 let b = self[v].get(idx);
                 let l = v.lit().not_if(!b);
                 assump.push(l);
