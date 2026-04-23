@@ -50,11 +50,16 @@ impl<T: Default> VarMap<T> {
     }
 }
 
-impl<T> Index<Var> for VarMap<T> {
+impl<T, I> Index<I> for VarMap<T>
+where
+    I: Into<Var>,
+{
     type Output = T;
 
     #[inline]
-    fn index(&self, index: Var) -> &Self::Output {
+    fn index(&self, index: I) -> &Self::Output {
+        let index = index.into();
+
         #[cfg(not(debug_assertions))]
         unsafe {
             self.map.get_unchecked(index.0 as usize)
@@ -64,41 +69,20 @@ impl<T> Index<Var> for VarMap<T> {
     }
 }
 
-impl<T> IndexMut<Var> for VarMap<T> {
+impl<T, I> IndexMut<I> for VarMap<T>
+where
+    I: Into<Var>,
+{
     #[inline]
-    fn index_mut(&mut self, index: Var) -> &mut Self::Output {
+    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+        let index = index.into();
+
         #[cfg(not(debug_assertions))]
         unsafe {
             self.map.get_unchecked_mut(index.0 as usize)
         }
         #[cfg(debug_assertions)]
         &mut self.map[index.0 as usize]
-    }
-}
-
-impl<T> Index<Lit> for VarMap<T> {
-    type Output = T;
-
-    #[inline]
-    fn index(&self, index: Lit) -> &Self::Output {
-        #[cfg(not(debug_assertions))]
-        unsafe {
-            self.map.get_unchecked((index.0 >> 1) as usize)
-        }
-        #[cfg(debug_assertions)]
-        &self.map[(index.0 >> 1) as usize]
-    }
-}
-
-impl<T> IndexMut<Lit> for VarMap<T> {
-    #[inline]
-    fn index_mut(&mut self, index: Lit) -> &mut Self::Output {
-        #[cfg(not(debug_assertions))]
-        unsafe {
-            self.map.get_unchecked_mut((index.0 >> 1) as usize)
-        }
-        #[cfg(debug_assertions)]
-        &mut self.map[(index.0 >> 1) as usize]
     }
 }
 
