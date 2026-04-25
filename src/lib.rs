@@ -113,10 +113,10 @@ impl AsMut<Var> for Var {
     }
 }
 
-impl Into<Var> for &Var {
+impl From<&Var> for Var {
     #[inline]
-    fn into(self) -> Var {
-        *self
+    fn from(value: &Var) -> Self {
+        *value
     }
 }
 
@@ -354,10 +354,10 @@ impl AsMut<Lit> for Lit {
     }
 }
 
-impl Into<Lit> for &Lit {
+impl From<&Lit> for Lit {
     #[inline]
-    fn into(self) -> Lit {
-        *self
+    fn from(value: &Lit) -> Self {
+        *value
     }
 }
 

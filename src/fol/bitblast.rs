@@ -586,3 +586,39 @@ pub(crate) fn write_bitblast(terms: &[TermVec]) -> TermVec {
     }
     res
 }
+
+impl FolOp {
+    pub fn bitblast(&self, terms: &[TermVec]) -> TermVec {
+        match self {
+            FolOp::Not => not_bitblast(terms),
+            FolOp::And => and_bitblast(terms),
+            FolOp::Or => or_bitblast(terms),
+            FolOp::Xor => xor_bitblast(terms),
+            FolOp::Eq => eq_bitblast(terms),
+            FolOp::Ult => ult_bitblast(terms),
+            FolOp::Slt => slt_bitblast(terms),
+            FolOp::Sll => sll_bitblast(terms),
+            FolOp::Srl => srl_bitblast(terms),
+            FolOp::Sra => sra_bitblast(terms),
+            FolOp::Rol => rol_bitblast(terms),
+            FolOp::Ror => ror_bitblast(terms),
+            FolOp::Ite => ite_bitblast(terms),
+            FolOp::Concat => concat_bitblast(terms),
+            FolOp::Sext => sext_bitblast(terms),
+            FolOp::Slice => slice_bitblast(terms),
+            FolOp::Redxor => redxor_bitblast(terms),
+            FolOp::Add => add_bitblast(terms),
+            FolOp::Sub => sub_bitblast(terms),
+            FolOp::Mul => mul_bitblast(terms),
+            FolOp::Udiv => udiv_bitblast(terms),
+            FolOp::Urem => urem_bitblast(terms),
+            FolOp::Neg => neg_bitblast(terms),
+            FolOp::Sdiv => sdiv_bitblast(terms),
+            FolOp::Srem => srem_bitblast(terms),
+            FolOp::Smod => smod_bitblast(terms),
+            FolOp::Read => read_bitblast(terms),
+            FolOp::Write => write_bitblast(terms),
+            _ => panic!("{:?} not support biblast", self),
+        }
+    }
+}

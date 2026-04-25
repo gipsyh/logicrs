@@ -164,7 +164,7 @@ impl BVA {
                     self.del_clause(cls);
                 }
             }
-            let mut lits_to_update = Vec::from_iter(lits_to_update.into_iter());
+            let mut lits_to_update = Vec::from_iter(lits_to_update);
             lits_to_update.sort();
             for lit in lits_to_update {
                 queue.push(QueueElement(lit, self.lit_count(lit)));

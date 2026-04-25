@@ -10,6 +10,6 @@ impl Term {
             return self.clone();
         };
         let terms: Vec<_> = op.terms.iter().map(|t| t.replace(x, y)).collect();
-        Term::new_op(op.op.clone(), &terms)
+        Term::new_op(op.op, &terms)
     }
 }

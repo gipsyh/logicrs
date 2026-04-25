@@ -1,4 +1,4 @@
-use super::{Term, op::DynOp};
+use super::{Term, op::FolOp};
 use std::{
     ops::{Deref, DerefMut, Index, IndexMut, Range, RangeFrom, RangeInclusive, RangeTo},
     slice, vec,
@@ -21,7 +21,7 @@ impl TermVec {
     }
 
     #[inline]
-    pub fn fold(&self, op: impl Into<DynOp> + Copy) -> Term {
+    pub fn fold(&self, op: FolOp) -> Term {
         Term::new_op_fold(op, self.iter())
     }
 

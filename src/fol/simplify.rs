@@ -1,10 +1,53 @@
 use super::Term;
-use super::op::{OptLevel, SimplifyCtx};
 use crate::fol::TermResult;
 use crate::fol::Value;
 use crate::fol::op::*;
 use giputils::bitvec::BitVec;
 use giputils::hash::GHashMap;
+
+/// Compiler-style optimization level used by simplification/canonicalization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum OptLevel {
+    O0 = 0,
+    O1 = 1,
+    O2 = 2,
+    O3 = 3,
+}
+
+impl Default for OptLevel {
+    #[inline]
+    fn default() -> Self {
+        Self::O2
+    }
+}
+
+impl OptLevel {
+    #[inline]
+    pub const fn at_least(self, other: OptLevel) -> bool {
+        self as u8 >= other as u8
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct SimplifyCtx {
+    pub level: OptLevel,
+}
+
+impl Default for SimplifyCtx {
+    #[inline]
+    fn default() -> Self {
+        Self {
+            level: OptLevel::default(),
+        }
+    }
+}
+
+impl SimplifyCtx {
+    #[inline]
+    pub const fn new(level: OptLevel) -> Self {
+        Self { level }
+    }
+}
 
 trait RewriteRule {
     #[inline]
@@ -64,11 +107,11 @@ fn msb_bit_term(term: &Term) -> Option<Term> {
     }
 }
 
-fn collect_assoc_terms(op: DynOp, term: &Term, out: &mut Vec<Term>) {
+fn collect_assoc_terms(op: FolOp, term: &Term, out: &mut Vec<Term>) {
     if let Some(top) = term.try_op()
         && top.op == op
     {
-        collect_assoc_terms(op.clone(), &top[0], out);
+        collect_assoc_terms(op, &top[0], out);
         collect_assoc_terms(op, &top[1], out);
         return;
     }
@@ -394,8 +437,8 @@ impl RewriteRule for AndBitLevelEqReconstruction {
             return None;
         }
         let mut leaves = Vec::new();
-        collect_assoc_terms(DynOp::from(And), a, &mut leaves);
-        collect_assoc_terms(DynOp::from(And), b, &mut leaves);
+        collect_assoc_terms(FolOp::And, a, &mut leaves);
+        collect_assoc_terms(FolOp::And, b, &mut leaves);
 
         let mut base: Option<Term> = None;
         let mut bits_by_idx = std::collections::BTreeMap::<usize, bool>::new();
@@ -448,8 +491,8 @@ impl RewriteRule for AndBitLevelMaskedEqReconstruction {
         }
 
         let mut leaves = Vec::new();
-        collect_assoc_terms(DynOp::from(And), a, &mut leaves);
-        collect_assoc_terms(DynOp::from(And), b, &mut leaves);
+        collect_assoc_terms(FolOp::And, a, &mut leaves);
+        collect_assoc_terms(FolOp::And, b, &mut leaves);
 
         let mut base: Option<Term> = None;
         let mut bits_by_idx = std::collections::BTreeMap::<usize, bool>::new();
@@ -704,8 +747,8 @@ impl RewriteRule for OrMergeEqConstOneBitDiffAssoc {
         }
 
         let mut leaves = Vec::new();
-        collect_assoc_terms(DynOp::from(Or), a, &mut leaves);
-        collect_assoc_terms(DynOp::from(Or), b, &mut leaves);
+        collect_assoc_terms(FolOp::Or, a, &mut leaves);
+        collect_assoc_terms(FolOp::Or, b, &mut leaves);
         if leaves.len() <= 2 {
             return None;
         }
@@ -762,8 +805,8 @@ impl RewriteRule for OrBitLevelClauseReconstruction {
             return None;
         }
         let mut leaves = Vec::new();
-        collect_assoc_terms(DynOp::from(Or), a, &mut leaves);
-        collect_assoc_terms(DynOp::from(Or), b, &mut leaves);
+        collect_assoc_terms(FolOp::Or, a, &mut leaves);
+        collect_assoc_terms(FolOp::Or, b, &mut leaves);
 
         let mut base: Option<Term> = None;
         let mut pol_by_idx = std::collections::BTreeMap::<usize, bool>::new();
@@ -818,8 +861,8 @@ impl RewriteRule for OrBitLevelMaskedClauseReconstruction {
         }
 
         let mut leaves = Vec::new();
-        collect_assoc_terms(DynOp::from(Or), a, &mut leaves);
-        collect_assoc_terms(DynOp::from(Or), b, &mut leaves);
+        collect_assoc_terms(FolOp::Or, a, &mut leaves);
+        collect_assoc_terms(FolOp::Or, b, &mut leaves);
 
         let mut base: Option<Term> = None;
         let mut pol_by_idx = std::collections::BTreeMap::<usize, bool>::new();
@@ -1459,7 +1502,7 @@ pub(crate) fn udiv_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     RewritePipeline::new(ctx.level).apply(terms)
 }
 
-fn op_simplify(ctx: &SimplifyCtx, op: DynOp, terms: &[Term]) -> TermResult {
+fn op_simplify(ctx: &SimplifyCtx, op: FolOp, terms: &[Term]) -> TermResult {
     // Constant propagation
     if terms.iter().all(|t| t.is_const()) {
         let vals: Vec<Value> = terms
@@ -1494,6 +1537,27 @@ fn op_simplify(ctx: &SimplifyCtx, op: DynOp, terms: &[Term]) -> TermResult {
     })
 }
 
+impl FolOp {
+    pub fn simplify(&self, ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+        match self {
+            FolOp::Not => not_simplify(ctx, terms),
+            FolOp::And => and_simplify(ctx, terms),
+            FolOp::Or => or_simplify(ctx, terms),
+            FolOp::Xor => xor_simplify(ctx, terms),
+            FolOp::Eq => eq_simplify(ctx, terms),
+            FolOp::Ult => ult_simplify(ctx, terms),
+            FolOp::Ite => ite_simplify(ctx, terms),
+            FolOp::Concat => concat_simplify(ctx, terms),
+            FolOp::Sext => sext_simplify(ctx, terms),
+            FolOp::Slice => slice_simplify(ctx, terms),
+            FolOp::Sub => sub_simplify(ctx, terms),
+            FolOp::Mul => mul_simplify(ctx, terms),
+            FolOp::Udiv => udiv_simplify(ctx, terms),
+            _ => None,
+        }
+    }
+}
+
 impl Term {
     pub fn simplify(&self, map: &mut GHashMap<Term, Term>) -> Term {
         self.simplify_with_ctx(&SimplifyCtx::default(), map)
@@ -1512,10 +1576,10 @@ impl Term {
                         .iter()
                         .map(|s| s.simplify_with_ctx(ctx, map))
                         .collect();
-                    if let Some(res) = op_simplify(ctx, op_term.op.clone(), &terms) {
+                    if let Some(res) = op_simplify(ctx, op_term.op, &terms) {
                         res.simplify_with_ctx(ctx, map)
                     } else {
-                        Term::new_op(op_term.op.clone(), terms)
+                        Term::new_op(op_term.op, terms)
                     }
                 } else {
                     self.clone()

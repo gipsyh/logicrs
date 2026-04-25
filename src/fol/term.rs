@@ -1,7 +1,7 @@
 use super::op::{Add, And, Ite, Neg, Not, Or, Sub, Xor};
-use super::{op::DynOp, sort::Sort};
-use crate::fol::op::{Concat, OpTrait, Slice};
-use crate::fol::{TermVec, Value, op};
+use super::{op::FolOp, sort::Sort};
+use crate::fol::op::{Concat, Slice};
+use crate::fol::{OpTrait, TermVec, Value, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::GHashMap;
@@ -35,8 +35,7 @@ impl Term {
     }
 
     #[inline]
-    pub fn new_op(op: impl Into<DynOp>, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
-        let op: DynOp = op.into();
+    pub fn new_op(op: FolOp, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
         let mut terms: Vec<Term> = terms.into_iter().map(|t| t.as_ref().clone()).collect();
         debug_assert!(!terms.is_empty());
         if !op.is_core() {
@@ -56,10 +55,7 @@ impl Term {
     }
 
     #[inline]
-    pub fn new_op_fold(
-        op: impl Into<DynOp> + Copy,
-        terms: impl IntoIterator<Item = impl AsRef<Term>>,
-    ) -> Term {
+    pub fn new_op_fold(op: FolOp, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
         let mut terms = terms.into_iter();
         let acc = terms.next().unwrap().as_ref().clone();
         terms.fold(acc, |acc, x| Self::new_op(op, &[acc, x.as_ref().clone()]))
@@ -81,7 +77,7 @@ impl Term {
 
     #[inline]
     pub fn new_op_elementwise(
-        op: impl Into<DynOp> + Copy,
+        op: FolOp,
         x: impl IntoIterator<Item = impl AsRef<Term>>,
         y: impl IntoIterator<Item = impl AsRef<Term>>,
     ) -> TermVec {
@@ -143,26 +139,26 @@ impl Term {
     #[inline]
     pub fn op<'a>(
         &'a self,
-        op: impl Into<DynOp>,
+        op: FolOp,
         terms: impl IntoIterator<Item = impl AsRef<Term> + 'a>,
     ) -> Term {
         let terms = once(self.clone()).chain(terms.into_iter().map(|l| l.as_ref().clone()));
-        Self::new_op(op.into(), terms)
+        Self::new_op(op, terms)
     }
 
     #[inline]
-    pub fn op0(&self, op: impl Into<DynOp>) -> Term {
-        Self::new_op(op.into(), [self])
+    pub fn op0(&self, op: FolOp) -> Term {
+        Self::new_op(op, [self])
     }
 
     #[inline]
-    pub fn op1(&self, op: impl Into<DynOp>, x: impl AsRef<Term>) -> Term {
-        Self::new_op(op.into(), [self, x.as_ref()])
+    pub fn op1(&self, op: FolOp, x: impl AsRef<Term>) -> Term {
+        Self::new_op(op, [self, x.as_ref()])
     }
 
     #[inline]
-    pub fn op2(&self, op: impl Into<DynOp>, x: impl AsRef<Term>, y: impl AsRef<Term>) -> Term {
-        Self::new_op(op.into(), [self, x.as_ref(), y.as_ref()])
+    pub fn op2(&self, op: FolOp, x: impl AsRef<Term>, y: impl AsRef<Term>) -> Term {
+        Self::new_op(op, [self, x.as_ref(), y.as_ref()])
     }
 
     #[inline]
@@ -238,7 +234,7 @@ impl Term {
                         .iter()
                         .map(|t| t.cached_apply(r, map))
                         .collect();
-                    Term::new_op(op_term.op.clone(), a)
+                    Term::new_op(op_term.op, a)
                 })
                 .unwrap_or(self.clone())
         };
@@ -306,7 +302,7 @@ impl PartialEq<Term> for &Term {
     }
 }
 
-impl Eq for Term {}
+impl std::cmp::Eq for Term {}
 
 impl AsRef<Term> for Term {
     #[inline]
@@ -436,15 +432,15 @@ pub enum TermType {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct OpTerm {
-    pub op: DynOp,
+    pub op: FolOp,
     pub terms: Vec<Term>,
 }
 
 impl OpTerm {
     #[inline]
-    fn new(op: impl Into<DynOp>, terms: Vec<Term>) -> Self {
+    fn new(op: FolOp, terms: Vec<Term>) -> Self {
         Self {
-            op: op.into(),
+            op,
             terms: terms.to_vec(),
         }
     }
