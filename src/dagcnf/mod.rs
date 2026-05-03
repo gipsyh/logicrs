@@ -2,16 +2,17 @@ pub mod simplify;
 pub mod simulate;
 mod top;
 
-use crate::{Lit, LitVec, LitVvec, Var, VarLMap, VarMap, VarVMap};
+use crate::{Lit, LitVec, LitVvec, Var, VarLMap, VarMap, VarRange, VarVMap};
 use giputils::hash::GHashSet;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     iter::{Flatten, Zip, once},
-    ops::{Index, RangeInclusive},
+    ops::Index,
     slice,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DagCnf {
     max_var: Var,
     cnf: VarMap<LitVvec>,
@@ -57,14 +58,14 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn var_iter(&self) -> RangeInclusive<Var> {
-        Var::CONST..=self.max_var
+    pub fn var_iter(&self) -> VarRange {
+        VarRange::new_inclusive(Var::CONST, self.max_var)
     }
 
     /// var iter wo const
     #[inline]
-    pub fn var_iter_woc(&self) -> RangeInclusive<Var> {
-        Var(1)..=self.max_var
+    pub fn var_iter_woc(&self) -> VarRange {
+        VarRange::new_inclusive(Var(1), self.max_var)
     }
 
     #[inline]
@@ -82,9 +83,19 @@ impl DagCnf {
         &self.dep[n]
     }
 
+    pub fn refs(&self) -> VarMap<Vec<Var>> {
+        let mut refs: VarMap<Vec<Var>> = VarMap::new_with(self.max_var);
+        for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
+            for &dep in self.dep[v].iter() {
+                refs[dep].push(v);
+            }
+        }
+        refs
+    }
+
     #[inline]
-    pub fn iter(&self) -> Zip<RangeInclusive<Var>, std::slice::Iter<'_, LitVvec>> {
-        (Var::CONST..=self.max_var).zip(self.cnf.iter())
+    pub fn iter(&self) -> Zip<VarRange, std::slice::Iter<'_, LitVvec>> {
+        VarRange::new_inclusive(Var::CONST, self.max_var).zip(self.cnf.iter())
     }
 
     #[inline]
@@ -128,17 +139,17 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn new_and(&mut self, ands: impl IntoIterator<Item = impl AsRef<Lit>>) -> Lit {
+    pub fn new_and(&mut self, ands: impl IntoIterator<Item = impl Into<Lit>>) -> Lit {
         let mut and = Vec::new();
         for a in ands.into_iter() {
-            let a = a.as_ref();
+            let a = a.into();
             if a.is_constant(true) {
                 continue;
             }
             if a.is_constant(false) {
                 return Lit::constant(false);
             }
-            and.push(*a);
+            and.push(a);
         }
         if and.is_empty() {
             Lit::constant(true)
@@ -152,17 +163,17 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn new_or(&mut self, ors: impl IntoIterator<Item = impl AsRef<Lit>>) -> Lit {
+    pub fn new_or(&mut self, ors: impl IntoIterator<Item = impl Into<Lit>>) -> Lit {
         let mut or = Vec::new();
         for o in ors.into_iter() {
-            let o = o.as_ref();
+            let o = o.into();
             if o.is_constant(false) {
                 continue;
             }
             if o.is_constant(true) {
                 return Lit::constant(true);
             }
-            or.push(*o);
+            or.push(o);
         }
         if or.is_empty() {
             Lit::constant(false)
@@ -225,10 +236,10 @@ impl DagCnf {
         n
     }
 
-    pub fn fanins(&self, var: impl IntoIterator<Item = impl AsRef<Var>>) -> GHashSet<Var> {
+    pub fn fanins(&self, var: impl IntoIterator<Item = impl Into<Var>>) -> GHashSet<Var> {
         let mut marked = GHashSet::new();
         let mut queue = vec![];
-        for v in var.into_iter().map(|v| *v.as_ref()) {
+        for v in var.into_iter().map(|v| v.into()) {
             marked.insert(v);
             queue.push(v);
         }
@@ -243,9 +254,9 @@ impl DagCnf {
         marked
     }
 
-    pub fn fanouts(&self, var: impl IntoIterator<Item = impl AsRef<Var>>) -> GHashSet<Var> {
-        let mut marked = GHashSet::from_iter(var.into_iter().map(|v| *v.as_ref()));
-        for v in Var::CONST..=self.max_var {
+    pub fn fanouts(&self, var: impl IntoIterator<Item = impl Into<Var>>) -> GHashSet<Var> {
+        let mut marked = GHashSet::from_iter(var.into_iter().map(|v| v.into()));
+        for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
             if self.dep[v].iter().any(|d| marked.contains(d)) {
                 marked.insert(v);
             }
@@ -255,7 +266,8 @@ impl DagCnf {
 
     pub fn root(&self) -> GHashSet<Var> {
         let mut root = GHashSet::from_iter(
-            (Var::new(0)..=self.max_var()).filter(|v| !self.dep[*v].is_empty()),
+            VarRange::new_inclusive(Var::CONST, self.max_var())
+                .filter(|v| !self.dep[*v].is_empty()),
         );
         for d in self.dep.iter() {
             for d in d.iter() {
@@ -265,18 +277,18 @@ impl DagCnf {
         root
     }
 
-    pub fn pol_filter(&mut self, pol: impl IntoIterator<Item = impl AsRef<Lit>>) {
-        for p in pol.into_iter().map(|l| *l.as_ref()) {
+    pub fn pol_filter(&mut self, pol: impl IntoIterator<Item = impl Into<Lit>>) {
+        for p in pol.into_iter().map(|l| l.into()) {
             self.cnf[p.var()].retain(|cls| cls.last() != !p);
             self.dep[p.var()] = deps(p.var(), &self.cnf[p.var()]);
         }
     }
 
-    pub fn rearrange(&mut self, additional: impl IntoIterator<Item = impl AsRef<Var>>) -> VarVMap {
+    pub fn rearrange(&mut self, additional: impl IntoIterator<Item = impl Into<Var>>) -> VarVMap {
         let mut domain = GHashSet::from_iter(
             additional
                 .into_iter()
-                .map(|l| *l.as_ref())
+                .map(|l| l.into())
                 .chain(once(Var::CONST)),
         );
         for cls in self.clause() {
@@ -323,7 +335,7 @@ impl DagCnf {
             assert!(*old > new.var());
         }
 
-        for v in Var::CONST..=self.max_var {
+        for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
             if map.contains_key(&v) {
                 self.cnf[v].clear();
                 self.dep[v].clear();

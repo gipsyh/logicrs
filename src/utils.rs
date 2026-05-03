@@ -1,5 +1,6 @@
-use crate::{Lbool, LboolVec, Lit, Var};
+use crate::{LboolVec, Lit, Var, VarRange};
 use giputils::hash::GHashMap;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Debug, Display},
     mem::take,
@@ -7,7 +8,7 @@ use std::{
     ptr, slice,
 };
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct VarMap<T> {
     map: Vec<T>,
 }
@@ -49,11 +50,16 @@ impl<T: Default> VarMap<T> {
     }
 }
 
-impl<T> Index<Var> for VarMap<T> {
+impl<T, I> Index<I> for VarMap<T>
+where
+    I: Into<Var>,
+{
     type Output = T;
 
     #[inline]
-    fn index(&self, index: Var) -> &Self::Output {
+    fn index(&self, index: I) -> &Self::Output {
+        let index = index.into();
+
         #[cfg(not(debug_assertions))]
         unsafe {
             self.map.get_unchecked(index.0 as usize)
@@ -63,41 +69,20 @@ impl<T> Index<Var> for VarMap<T> {
     }
 }
 
-impl<T> IndexMut<Var> for VarMap<T> {
+impl<T, I> IndexMut<I> for VarMap<T>
+where
+    I: Into<Var>,
+{
     #[inline]
-    fn index_mut(&mut self, index: Var) -> &mut Self::Output {
+    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+        let index = index.into();
+
         #[cfg(not(debug_assertions))]
         unsafe {
             self.map.get_unchecked_mut(index.0 as usize)
         }
         #[cfg(debug_assertions)]
         &mut self.map[index.0 as usize]
-    }
-}
-
-impl<T> Index<Lit> for VarMap<T> {
-    type Output = T;
-
-    #[inline]
-    fn index(&self, index: Lit) -> &Self::Output {
-        #[cfg(not(debug_assertions))]
-        unsafe {
-            self.map.get_unchecked((index.0 >> 1) as usize)
-        }
-        #[cfg(debug_assertions)]
-        &self.map[(index.0 >> 1) as usize]
-    }
-}
-
-impl<T> IndexMut<Lit> for VarMap<T> {
-    #[inline]
-    fn index_mut(&mut self, index: Lit) -> &mut Self::Output {
-        #[cfg(not(debug_assertions))]
-        unsafe {
-            self.map.get_unchecked_mut((index.0 >> 1) as usize)
-        }
-        #[cfg(debug_assertions)]
-        &mut self.map[(index.0 >> 1) as usize]
     }
 }
 
@@ -451,7 +436,7 @@ impl VarVMap {
     #[inline]
     pub fn new_self_map(v: Var) -> Self {
         let mut res = VarVMap::new();
-        for v in Var::CONST..=v {
+        for v in VarRange::new_inclusive(Var::CONST, v) {
             res.insert(v, v);
         }
         res
@@ -496,10 +481,24 @@ impl VarVMap {
         }
     }
 
+    pub fn map_value(&mut self, map: impl Fn(Var) -> Var) {
+        for (k, v) in take(&mut self.map) {
+            self.insert(k, map(v));
+        }
+    }
+
     pub fn filter_map_key(&mut self, map: impl Fn(Var) -> Option<Var>) {
         for (k, v) in take(&mut self.map) {
             if let Some(n) = map(k) {
                 self.insert(n, v);
+            }
+        }
+    }
+
+    pub fn filter_map_value(&mut self, map: impl Fn(Var) -> Option<Var>) {
+        for (k, v) in take(&mut self.map) {
+            if let Some(n) = map(v) {
+                self.insert(k, n);
             }
         }
     }
@@ -571,31 +570,7 @@ pub struct SymbolAssign {
 impl Debug for SymbolAssign {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut assign = self.assign.clone();
-        while let Some(last) = assign.last() {
-            if last.is_none() {
-                assign.pop();
-            } else {
-                break;
-            }
-        }
-        let h = self.assign.len() - 1;
-        let mut l = 0;
-        assign.reverse();
-        while let Some(last) = assign.last() {
-            if last.is_none() {
-                assign.pop();
-                l += 1;
-            } else {
-                break;
-            }
-        }
-        assign.reverse();
-        if l == h {
-            write!(f, "{}[{l}] = {assign}", self.symbol)
-        } else {
-            write!(f, "{}[{h}:{l}] = {assign}", self.symbol)
-        }
+        write!(f, "{} = {}", self.symbol, self.assign)
     }
 }
 
@@ -632,26 +607,5 @@ impl VarSymbols {
             }
         }
         res
-    }
-
-    pub fn lits_symbols(
-        &self,
-        lits: impl IntoIterator<Item = impl AsRef<Lit>>,
-    ) -> Vec<SymbolAssign> {
-        let mut res: GHashMap<String, LboolVec> = GHashMap::new();
-        lits.into_iter().for_each(|l| {
-            let l = *l.as_ref();
-            let symbols = self.get(l.var());
-            for (s, idx) in symbols {
-                let lbool_vec = res.entry(s).or_default();
-                while lbool_vec.len() <= idx {
-                    lbool_vec.push(Lbool::NONE);
-                }
-                lbool_vec[idx] = Lbool::from(l.polarity());
-            }
-        });
-        res.into_iter()
-            .map(|(symbol, assign)| SymbolAssign { symbol, assign })
-            .collect()
     }
 }

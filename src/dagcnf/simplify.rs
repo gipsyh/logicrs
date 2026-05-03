@@ -1,9 +1,10 @@
 use super::DagCnf;
 use crate::{
-    LitMap, LitOrdVec, LitVec, LitVvec, Var, VarAssign, lemmas_subsume_simplify, occur::Occurs,
+    LitMap, LitOrdVec, LitVec, LitVvec, Var, VarAssign, VarRange, lemmas_subsume_simplify,
+    occur::Occurs,
 };
 use giputils::{allocator::Gallocator, grc::Grc, hash::GHashSet, heap::BinaryHeap};
-use log::info;
+use log::debug;
 use std::{
     iter::once,
     time::{Duration, Instant},
@@ -38,7 +39,7 @@ impl DagCnfSimplify {
             num_ocls,
             time: Duration::default(),
         };
-        for v in Var::CONST..=max_var {
+        for v in VarRange::new_inclusive(Var::CONST, max_var) {
             for mut cls in dagcnf.cnf[v].clone() {
                 cls.sort();
                 cls.dedup();
@@ -53,7 +54,7 @@ impl DagCnfSimplify {
         if self.occur.is_none() {
             let mut occur = Grc::new(Occurs::new_with(self.max_var, self.cdb.clone()));
             let mut qbve = BinaryHeap::new(occur.clone());
-            for v in Var::CONST..=self.max_var {
+            for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
                 for &cls in self.cnf[v.lit()].iter().chain(self.cnf[!v.lit()].iter()) {
                     for &l in self.cdb[cls].iter() {
                         let lv = l.var();
@@ -63,7 +64,7 @@ impl DagCnfSimplify {
                     }
                 }
             }
-            for v in Var::CONST..=self.max_var {
+            for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
                 qbve.push(v);
             }
             self.occur = Some((occur, qbve));
@@ -287,7 +288,7 @@ impl DagCnfSimplify {
                         self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
                         return;
                     }
-                    let mut cube = self.cdb[ci].cube().clone();
+                    let mut cube = self.cdb[ci].as_litvec().clone();
                     cube.retain(|l| *l != diff);
                     self.cdb[ci] = LitOrdVec::new(cube);
                     self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
@@ -296,7 +297,7 @@ impl DagCnfSimplify {
                     self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
                     self.cdb.dealloc(cj);
                 } else {
-                    let mut cube = self.cdb[cj].cube().clone();
+                    let mut cube = self.cdb[cj].as_litvec().clone();
                     assert!(cube.last() == self.cdb[cj].last());
                     cube.retain(|l| *l != !diff);
                     self.cdb[cj] = LitOrdVec::new(cube);
@@ -308,7 +309,7 @@ impl DagCnfSimplify {
     pub fn subsume_simplify(&mut self) {
         let start = Instant::now();
         self.enable_occur();
-        for v in Var::CONST..=self.max_var {
+        for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
             for cls in self.cnf[v.lit()].clone() {
                 self.cls_subsume_check(cls);
             }
@@ -317,7 +318,7 @@ impl DagCnfSimplify {
             }
         }
         self.disable_occur();
-        for v in Var::CONST..=self.max_var {
+        for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
             self.cnf[v.lit()].retain(|&c| !self.cdb.is_removed(c));
             self.cnf[!v.lit()].retain(|&c| !self.cdb.is_removed(c));
         }
@@ -345,10 +346,10 @@ impl DagCnfSimplify {
     pub fn const_simplify(&mut self) {
         let start = Instant::now();
         self.disable_occur();
-        for v in Var(1)..=self.max_var {
+        for v in VarRange::new_inclusive(Var(1), self.max_var) {
             self.const_simp_var(v);
         }
-        for v in Var(1)..=self.max_var {
+        for v in VarRange::new_inclusive(Var(1), self.max_var) {
             let ln = v.lit();
             let vv = self.value.v(ln);
             if !vv.is_none() {
@@ -365,13 +366,13 @@ impl DagCnfSimplify {
         let start = Instant::now();
         let mut dagcnf = DagCnf::new();
         dagcnf.new_var_to(self.max_var);
-        for v in Var(1)..=self.max_var {
+        for v in VarRange::new_inclusive(Var(1), self.max_var) {
             let mut cnf: Vec<_> = self.cnf[v.lit()]
                 .iter()
                 .chain(self.cnf[!v.lit()].iter())
                 .map(|&cls| {
                     assert!(!self.cdb.is_removed(cls));
-                    self.cdb[cls].cube().clone()
+                    self.cdb[cls].as_litvec().clone()
                 })
                 .collect();
             if self.frozen.contains(&v)
@@ -383,7 +384,7 @@ impl DagCnfSimplify {
             dagcnf.add_rel(v, &cnf);
         }
         self.time += start.elapsed();
-        info!(
+        debug!(
             "dagcnf simplified from {} to {} clauses in {:.2}s",
             self.num_ocls,
             dagcnf.num_clause(),
@@ -405,18 +406,14 @@ fn clause_subsume_simplify(lemmas: LitVvec) -> LitVvec {
     let lemmas = lemmas_subsume_simplify(lemmas);
     lemmas
         .into_iter()
-        .map(|l| LitVec::from(l.cube().as_slice()))
+        .map(|l| LitVec::from(l.as_litvec().as_slice()))
         .collect()
 }
 
 impl DagCnf {
-    pub fn simplify(&self, frozen: impl IntoIterator<Item = impl AsRef<Var>>) -> Self {
+    pub fn simplify(&self, frozen: impl IntoIterator<Item = impl Into<Var>>) -> Self {
         let mut simp = DagCnfSimplify::new(self);
-        for v in frozen
-            .into_iter()
-            .map(|l| *l.as_ref())
-            .chain(once(Var::CONST))
-        {
+        for v in frozen.into_iter().map(|l| l.into()).chain(once(Var::CONST)) {
             simp.froze(v);
         }
         simp.simplify()
@@ -425,7 +422,7 @@ impl DagCnf {
 
 #[cfg(test)]
 mod test {
-    use crate::{DagCnf, Lit, Var, simplify::DagCnfSimplify};
+    use crate::{DagCnf, Lit, Var, VarRange, simplify::DagCnfSimplify};
 
     #[test]
     fn test0() {
@@ -435,7 +432,7 @@ mod test {
         dc.new_and([Lit::from(1), Lit::from(2), Lit::from(3), Lit::from(4)]);
         println!("{dc}");
         let mut simp = DagCnfSimplify::new(&dc);
-        for v in Var::CONST..=dc.max_var() {
+        for v in VarRange::new_inclusive(Var::CONST, dc.max_var()) {
             simp.froze(v);
         }
         let ndc = simp.simplify();

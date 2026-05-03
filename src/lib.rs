@@ -1,5 +1,3 @@
-#![feature(step_trait, try_trait_v2)]
-
 mod assign;
 mod cnf;
 mod cstdagcnf;
@@ -22,16 +20,16 @@ pub use lbool::*;
 pub use litordvec::*;
 pub use litvec::*;
 pub use litvvec::*;
+use serde::{Deserialize, Serialize};
 pub use utils::*;
 
 use std::{
     fmt::{self, Debug, Display},
     hash::Hash,
-    iter::Step,
     ops::{Add, AddAssign, Deref, Not, Sub},
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub struct Var(pub u32);
 
 impl Var {
@@ -62,6 +60,15 @@ impl Add<Var> for Var {
     }
 }
 
+impl Sub<Var> for Var {
+    type Output = Var;
+
+    #[inline]
+    fn sub(self, rhs: Var) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
 impl AddAssign<Var> for Var {
     #[inline]
     fn add_assign(&mut self, rhs: Var) {
@@ -72,6 +79,13 @@ impl AddAssign<Var> for Var {
 impl From<Lit> for Var {
     #[inline]
     fn from(value: Lit) -> Self {
+        value.var()
+    }
+}
+
+impl From<&Lit> for Var {
+    #[inline]
+    fn from(value: &Lit) -> Self {
         value.var()
     }
 }
@@ -99,6 +113,13 @@ impl AsMut<Var> for Var {
     }
 }
 
+impl From<&Var> for Var {
+    #[inline]
+    fn from(value: &Var) -> Self {
+        *value
+    }
+}
+
 impl Display for Var {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -110,23 +131,6 @@ impl Debug for Var {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl Step for Var {
-    #[inline]
-    fn steps_between(start: &Self, end: &Self) -> (usize, Option<usize>) {
-        u32::steps_between(&start.0, &end.0)
-    }
-
-    #[inline]
-    fn forward_checked(start: Self, count: usize) -> Option<Self> {
-        u32::forward_checked(start.0, count).map(Self)
-    }
-
-    #[inline]
-    fn backward_checked(start: Self, count: usize) -> Option<Self> {
-        u32::backward_checked(start.0, count).map(Self)
     }
 }
 
@@ -192,7 +196,45 @@ impl_var_traits!(i32);
 impl_var_traits!(usize);
 impl_var_traits!(isize);
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default)]
+/// An iterator over a range of `Var` values (stable Rust compatible replacement for RangeInclusive<Var>)
+#[derive(Clone, Debug)]
+pub struct VarRange {
+    inner: std::ops::RangeInclusive<u32>,
+}
+
+impl VarRange {
+    #[inline]
+    pub fn new_inclusive(start: Var, end: Var) -> Self {
+        Self {
+            inner: start.0..=end.0,
+        }
+    }
+}
+
+impl Iterator for VarRange {
+    type Item = Var;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner.next().map(Var)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.inner.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for VarRange {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.inner.next_back().map(Var)
+    }
+}
+
+impl ExactSizeIterator for VarRange {}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub struct Lit(u32);
 
 impl From<Var> for Lit {
@@ -289,6 +331,15 @@ impl Not for Lit {
     }
 }
 
+impl Not for &Lit {
+    type Output = Lit;
+
+    #[inline]
+    fn not(self) -> Self::Output {
+        !*self
+    }
+}
+
 impl AsRef<Lit> for Lit {
     #[inline]
     fn as_ref(&self) -> &Lit {
@@ -300,6 +351,13 @@ impl AsMut<Lit> for Lit {
     #[inline]
     fn as_mut(&mut self) -> &mut Lit {
         self
+    }
+}
+
+impl From<&Lit> for Lit {
+    #[inline]
+    fn from(value: &Lit) -> Self {
+        *value
     }
 }
 

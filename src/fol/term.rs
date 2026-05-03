@@ -1,7 +1,7 @@
 use super::op::{Add, And, Ite, Neg, Not, Or, Sub, Xor};
-use super::{op::DynOp, sort::Sort};
+use super::{op::FolOp, sort::Sort};
 use crate::fol::op::{Concat, Slice};
-use crate::fol::{TermVec, op};
+use crate::fol::{OpTrait, TermVec, Value, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::GHashMap;
@@ -14,10 +14,15 @@ use std::{hash::Hash, ops::Deref};
 
 #[derive(Clone)]
 pub struct Term {
-    pub(crate) inner: Grc<TermInner>,
+    inner: Grc<TermInner>,
 }
 
 impl Term {
+    #[inline]
+    pub fn id(&self) -> usize {
+        self.inner.id
+    }
+
     #[inline]
     pub fn bool_const(c: bool) -> Term {
         tm().new_term(TermType::Const(BitVec::from(&[c])), Sort::Bv(1))
@@ -30,12 +35,14 @@ impl Term {
     }
 
     #[inline]
-    pub fn new_op(op: impl Into<DynOp>, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
-        let op: DynOp = op.into();
-        let terms: Vec<Term> = terms.into_iter().map(|t| t.as_ref().clone()).collect();
+    pub fn new_op(op: FolOp, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
+        let mut terms: Vec<Term> = terms.into_iter().map(|t| t.as_ref().clone()).collect();
         debug_assert!(!terms.is_empty());
         if !op.is_core() {
             return op.normalize(&terms);
+        }
+        if op.traits().contains(OpTrait::Commutative) {
+            terms.sort_by_key(|t| t.id());
         }
         let sort = op.sort(&terms);
         let term = TermType::Op(OpTerm::new(op, terms));
@@ -48,18 +55,29 @@ impl Term {
     }
 
     #[inline]
-    pub fn new_op_fold(
-        op: impl Into<DynOp> + Copy,
-        terms: impl IntoIterator<Item = impl AsRef<Term>>,
-    ) -> Term {
+    pub fn new_op_fold(op: FolOp, terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
         let mut terms = terms.into_iter();
         let acc = terms.next().unwrap().as_ref().clone();
         terms.fold(acc, |acc, x| Self::new_op(op, &[acc, x.as_ref().clone()]))
     }
 
+    /// can only be used for bool terms
+    pub fn new_ands(terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
+        terms.into_iter().fold(Term::bool_const(true), |acc, x| {
+            Self::new_op(op::And, &[acc, x.as_ref().clone()])
+        })
+    }
+
+    /// can only be used for bool terms
+    pub fn new_ors(terms: impl IntoIterator<Item = impl AsRef<Term>>) -> Term {
+        terms.into_iter().fold(Term::bool_const(false), |acc, x| {
+            Self::new_op(op::Or, &[acc, x.as_ref().clone()])
+        })
+    }
+
     #[inline]
     pub fn new_op_elementwise(
-        op: impl Into<DynOp> + Copy,
+        op: FolOp,
         x: impl IntoIterator<Item = impl AsRef<Term>>,
         y: impl IntoIterator<Item = impl AsRef<Term>>,
     ) -> TermVec {
@@ -121,26 +139,26 @@ impl Term {
     #[inline]
     pub fn op<'a>(
         &'a self,
-        op: impl Into<DynOp>,
+        op: FolOp,
         terms: impl IntoIterator<Item = impl AsRef<Term> + 'a>,
     ) -> Term {
         let terms = once(self.clone()).chain(terms.into_iter().map(|l| l.as_ref().clone()));
-        Self::new_op(op.into(), terms)
+        Self::new_op(op, terms)
     }
 
     #[inline]
-    pub fn op0(&self, op: impl Into<DynOp>) -> Term {
-        Self::new_op(op.into(), [self])
+    pub fn op0(&self, op: FolOp) -> Term {
+        Self::new_op(op, [self])
     }
 
     #[inline]
-    pub fn op1(&self, op: impl Into<DynOp>, x: impl AsRef<Term>) -> Term {
-        Self::new_op(op.into(), [self, x.as_ref()])
+    pub fn op1(&self, op: FolOp, x: impl AsRef<Term>) -> Term {
+        Self::new_op(op, [self, x.as_ref()])
     }
 
     #[inline]
-    pub fn op2(&self, op: impl Into<DynOp>, x: impl AsRef<Term>, y: impl AsRef<Term>) -> Term {
-        Self::new_op(op.into(), [self, x.as_ref(), y.as_ref()])
+    pub fn op2(&self, op: FolOp, x: impl AsRef<Term>, y: impl AsRef<Term>) -> Term {
+        Self::new_op(op, [self, x.as_ref(), y.as_ref()])
     }
 
     #[inline]
@@ -216,7 +234,7 @@ impl Term {
                         .iter()
                         .map(|t| t.cached_apply(r, map))
                         .collect();
-                    Term::new_op(op_term.op.clone(), a)
+                    Term::new_op(op_term.op, a)
                 })
                 .unwrap_or(self.clone())
         };
@@ -226,6 +244,23 @@ impl Term {
 
     pub fn apply(&self, r: impl Fn(&Term) -> Option<Term>) -> Term {
         self.cached_apply(&r, &mut GHashMap::new())
+    }
+
+    pub fn simulate(&self, val: &mut GHashMap<Term, Value>) -> Value {
+        if let Some(v) = val.get(self) {
+            return v.clone();
+        }
+        let v = match self.deref() {
+            TermType::Const(c) => Value::Bv(c.clone().into()),
+            TermType::Var(_) => Value::default_from(&self.sort()),
+            TermType::Op(op_term) => {
+                let child_vals: Vec<Value> =
+                    op_term.terms.iter().map(|t| t.simulate(val)).collect();
+                op_term.op.simulate(&child_vals)
+            }
+        };
+        val.insert(self.clone(), v.clone());
+        v
     }
 }
 
@@ -241,7 +276,7 @@ impl Deref for Term {
 impl Hash for Term {
     #[inline]
     fn hash<H: hash::Hasher>(&self, state: &mut H) {
-        self.inner.hash(state);
+        self.id().hash(state);
     }
 }
 
@@ -267,7 +302,7 @@ impl PartialEq<Term> for &Term {
     }
 }
 
-impl Eq for Term {}
+impl std::cmp::Eq for Term {}
 
 impl AsRef<Term> for Term {
     #[inline]
@@ -355,7 +390,8 @@ impl_biops!(BitXor, bitxor, Xor);
 impl_biops!(Add, add, Add);
 impl_biops!(Sub, sub, Sub);
 
-pub struct TermInner {
+struct TermInner {
+    id: usize,
     sort: Sort,
     ty: TermType,
 }
@@ -396,15 +432,15 @@ pub enum TermType {
 
 #[derive(Clone, PartialEq, Eq, Hash)]
 pub struct OpTerm {
-    pub op: DynOp,
+    pub op: FolOp,
     pub terms: Vec<Term>,
 }
 
 impl OpTerm {
     #[inline]
-    fn new(op: impl Into<DynOp>, terms: Vec<Term>) -> Self {
+    fn new(op: FolOp, terms: Vec<Term>) -> Self {
         Self {
-            op: op.into(),
+            op,
             terms: terms.to_vec(),
         }
     }
@@ -441,6 +477,7 @@ impl TermGC {
 struct TermManager {
     _tgc: TermGC,
     avl_vid: usize,
+    avl_tid: usize,
     map: GHashMap<TermType, Term>,
 }
 
@@ -452,6 +489,7 @@ impl TermManager {
                 garbage: Vec::new(),
             },
             avl_vid: 0,
+            avl_tid: 0,
             map: GHashMap::new(),
         }
     }
@@ -461,8 +499,11 @@ impl TermManager {
         match self.map.get(&ty) {
             Some(term) => term.clone(),
             None => {
+                let id = self.avl_tid;
+                self.avl_tid += 1;
                 let term = Term {
                     inner: Grc::new(TermInner {
+                        id,
                         sort,
                         ty: ty.clone(),
                     }),

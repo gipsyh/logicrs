@@ -1,5 +1,4 @@
-use super::{Term, op::DynOp};
-use std::ops::{ControlFlow, FromResidual, Try};
+use super::{Term, op::FolOp};
 use std::{
     ops::{Deref, DerefMut, Index, IndexMut, Range, RangeFrom, RangeInclusive, RangeTo},
     slice, vec,
@@ -22,7 +21,7 @@ impl TermVec {
     }
 
     #[inline]
-    pub fn fold(&self, op: impl Into<DynOp> + Copy) -> Term {
+    pub fn fold(&self, op: FolOp) -> Term {
         Term::new_op_fold(op, self.iter())
     }
 
@@ -167,33 +166,5 @@ impl From<Vec<Term>> for TermVec {
     }
 }
 
-pub enum TermResult {
-    Some(Term),
-    None,
-}
-
-impl FromResidual for TermResult {
-    #[inline]
-    fn from_residual(residual: <Self as Try>::Residual) -> Self {
-        TermResult::Some(residual)
-    }
-}
-
-impl Try for TermResult {
-    type Output = ();
-
-    type Residual = Term;
-
-    #[inline]
-    fn from_output(_: Self::Output) -> Self {
-        TermResult::None
-    }
-
-    #[inline]
-    fn branch(self) -> ControlFlow<Self::Residual, Self::Output> {
-        match self {
-            TermResult::Some(term) => ControlFlow::Break(term),
-            TermResult::None => ControlFlow::Continue(()),
-        }
-    }
-}
+/// Type alias for optional Term result (stable Rust compatible)
+pub type TermResult = Option<Term>;
