@@ -171,8 +171,6 @@ impl FolOp {
             | FolOp::And
             | FolOp::Or
             | FolOp::Xor
-            | FolOp::Ult
-            | FolOp::Slt
             | FolOp::Sll
             | FolOp::Srl
             | FolOp::Sra
@@ -188,7 +186,7 @@ impl FolOp {
             | FolOp::Srem
             | FolOp::Smod
             | FolOp::Write => terms[0].sort(),
-            FolOp::Redxor | FolOp::Eq | FolOp::Ors | FolOp::Ands => Sort::Bv(1),
+            FolOp::Redxor | FolOp::Eq | FolOp::Ors | FolOp::Ands | FolOp::Ult | FolOp::Slt => Sort::Bv(1),
             FolOp::Ite => terms[1].sort(),
             FolOp::Concat | FolOp::Sext => Sort::Bv(terms[0].bv_len() + terms[1].bv_len()),
             FolOp::Slice => Sort::Bv(terms[1].bv_len() - terms[2].bv_len() + 1),
