@@ -1,5 +1,5 @@
 use crate::{Lit, LitVec, Var};
-use giputils::StopCtrl;
+use giputils::TerminateCtrl;
 use std::{sync::mpsc::channel, thread::scope, time::Duration};
 
 pub trait Satif: Send {
@@ -37,7 +37,7 @@ pub trait Satif: Send {
         constraint: Vec<LitVec>,
         limit: Duration,
     ) -> Option<bool> {
-        let mut stop = self.get_stop_ctrl();
+        let stop = self.get_terminate_ctrl();
         let (tx, rx) = channel();
         scope(|s| {
             let join = s.spawn(|| tx.send(self.try_solve(assumps, constraint)).unwrap());
@@ -45,7 +45,7 @@ pub trait Satif: Send {
                 Ok(Some(x)) => Some(x),
                 Ok(None) => unreachable!(),
                 Err(_) => {
-                    stop.stop();
+                    stop.terminate();
                     join.join().unwrap();
                     None
                 }
@@ -84,7 +84,7 @@ pub trait Satif: Send {
         false
     }
 
-    fn get_stop_ctrl(&mut self) -> Box<dyn StopCtrl> {
-        panic!("unsupport get_stop_ctrl");
+    fn get_terminate_ctrl(&mut self) -> Box<dyn TerminateCtrl> {
+        panic!("unsupport get_terminate_ctrl");
     }
 }
