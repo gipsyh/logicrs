@@ -57,6 +57,13 @@ impl Value {
             Sort::Array(_, _) => Value::Array(ArrayValue::default_from(sort)),
         }
     }
+
+    pub fn all_x(&self) -> bool {
+        match self {
+            Value::Bv(v) => v.all_x(),
+            Value::Array(v) => v.is_empty(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
