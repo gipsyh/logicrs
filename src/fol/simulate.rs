@@ -1,5 +1,6 @@
-use crate::fol::{FolOp, Value};
+use crate::fol::{ArrayValue, FolOp, Value};
 use crate::{Lbool, LboolVec};
+use giputils::bitvec::BitVec;
 
 pub fn not_simulate(terms: &[Value]) -> Value {
     let x = terms[0].as_bv().unwrap();
@@ -693,76 +694,34 @@ pub fn smod_simulate(terms: &[Value]) -> Value {
 }
 
 pub fn read_simulate(terms: &[Value]) -> Value {
-    let array = terms[0].as_bv().unwrap();
+    let array = terms[0].as_array().unwrap();
     let index = terms[1].as_bv().unwrap();
-    let index_len = index.len();
-    let array_len = array.len();
-    let index_range = 1usize << index_len;
-    let element_len = array_len / index_range;
-
-    // Convert index to usize if possible
-    let mut idx_val: Option<usize> = Some(0);
-    for (i, bit) in index.iter().enumerate() {
-        if bit.is_none() {
-            idx_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = idx_val
-        {
-            *v |= 1 << i;
-        }
+    let element_len = array.sort().array().1;
+    if index.any_x() {
+        return Value::Bv(LboolVec::from_elem(Lbool::NONE, element_len));
     }
-
-    match idx_val {
-        Some(idx) => {
-            let mut res = LboolVec::from_elem(Lbool::NONE, element_len);
-            for i in 0..element_len {
-                res.set(i, array.get(element_len * idx + i));
-            }
-            Value::Bv(res)
-        }
-        None => Value::Bv(LboolVec::from_elem(Lbool::NONE, element_len)),
-    }
+    let index: BitVec = index.into();
+    let index: usize = index.to_usize();
+    Value::Bv(
+        array
+            .get(&index)
+            .cloned()
+            .unwrap_or_else(|| LboolVec::from_elem(Lbool::NONE, element_len)),
+    )
 }
 
 pub fn write_simulate(terms: &[Value]) -> Value {
-    let array = terms[0].as_bv().unwrap();
+    let array = terms[0].as_array().unwrap();
     let index = terms[1].as_bv().unwrap();
+    if index.any_x() {
+        return Value::Array(ArrayValue::default_from(array.sort()));
+    }
+    let index: BitVec = index.into();
+    let index: usize = index.to_usize();
     let value = terms[2].as_bv().unwrap();
-    let index_len = index.len();
-    let array_len = array.len();
-    let index_range = 1usize << index_len;
-    let element_len = array_len / index_range;
-
-    // Convert index to usize if possible
-    let mut idx_val: Option<usize> = Some(0);
-    for (i, bit) in index.iter().enumerate() {
-        if bit.is_none() {
-            idx_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = idx_val
-        {
-            *v |= 1 << i;
-        }
-    }
-
-    match idx_val {
-        Some(idx) => {
-            let mut res = array.clone();
-            for i in 0..element_len {
-                res.set(element_len * idx + i, value.get(i));
-            }
-            Value::Bv(res)
-        }
-        None => {
-            // If index is unknown, we don't know which element changes
-            // Result is unknown for all elements
-            Value::Bv(LboolVec::from_elem(Lbool::NONE, array_len))
-        }
-    }
+    let mut res = array.clone();
+    res.insert(index, value.clone());
+    Value::Array(res)
 }
 
 impl FolOp {
@@ -807,7 +766,7 @@ impl FolOp {
 mod tests {
     use super::*;
     use crate::LboolVec;
-    use crate::fol::Value;
+    use crate::fol::{Sort, Value};
 
     fn bv(s: &str) -> Value {
         Value::Bv(LboolVec::from(s))
@@ -1206,8 +1165,12 @@ mod tests {
     #[test]
     fn test_read_simulate() {
         // Array with 4 elements of 2 bits each: [00, 01, 10, 11]
-        // Flat representation: 11_10_01_00
-        let array = bv("11100100");
+        let mut array = ArrayValue::default_from(Sort::Array(2, 2));
+        array.insert(0, LboolVec::from("00"));
+        array.insert(1, LboolVec::from("01"));
+        array.insert(2, LboolVec::from("10"));
+        array.insert(3, LboolVec::from("11"));
+        let array = Value::Array(array);
         // Read at index 0 -> 00
         assert_bv_eq(&read_simulate(&[array.clone(), bv("00")]), "00");
         // Read at index 1 -> 01
@@ -1221,22 +1184,35 @@ mod tests {
     #[test]
     fn test_write_simulate() {
         // Array with 4 elements of 2 bits each: [00, 01, 10, 11]
-        // Flat representation: 11_10_01_00
-        let array = bv("11100100");
-        // Write 11 at index 0 -> [11, 01, 10, 11] = 11_10_01_11
-        assert_bv_eq(
-            &write_simulate(&[array.clone(), bv("00"), bv("11")]),
-            "11100111",
-        );
-        // Write 00 at index 3 -> [00, 01, 10, 00] = 00_10_01_00
-        assert_bv_eq(
-            &write_simulate(&[array.clone(), bv("11"), bv("00")]),
-            "00100100",
-        );
-        // Write 11 at index 1 -> [00, 11, 10, 11] = 11_10_11_00
-        assert_bv_eq(
-            &write_simulate(&[array.clone(), bv("01"), bv("11")]),
-            "11101100",
-        );
+        let mut array = ArrayValue::default_from(Sort::Array(2, 2));
+        array.insert(0, LboolVec::from("00"));
+        array.insert(1, LboolVec::from("01"));
+        array.insert(2, LboolVec::from("10"));
+        array.insert(3, LboolVec::from("11"));
+        let array = Value::Array(array);
+
+        let written = write_simulate(&[array.clone(), bv("00"), bv("11")]);
+        assert_bv_eq(&read_simulate(&[written, bv("00")]), "11");
+
+        let written = write_simulate(&[array.clone(), bv("11"), bv("00")]);
+        assert_bv_eq(&read_simulate(&[written, bv("11")]), "00");
+
+        let written = write_simulate(&[array, bv("01"), bv("11")]);
+        assert_bv_eq(&read_simulate(&[written, bv("01")]), "11");
+    }
+
+    #[test]
+    fn test_sparse_array_read_write_simulate() {
+        let mut array = ArrayValue::default_from(Sort::Array(2, 2));
+        array.insert(1, LboolVec::from("01"));
+        array.insert(3, LboolVec::from("11"));
+        let array = Value::Array(array);
+
+        assert_bv_eq(&read_simulate(&[array.clone(), bv("01")]), "01");
+        assert_bv_eq(&read_simulate(&[array.clone(), bv("00")]), "xx");
+        assert_bv_eq(&read_simulate(&[array.clone(), bv("0x")]), "xx");
+
+        let written = write_simulate(&[array, bv("10"), bv("10")]);
+        assert_bv_eq(&read_simulate(&[written, bv("10")]), "10");
     }
 }

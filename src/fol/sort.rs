@@ -1,8 +1,11 @@
+use enum_as_inner::EnumAsInner;
 use std::fmt::{self, Debug};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, EnumAsInner)]
 pub enum Sort {
+    /// Bit-vector sort with the given bit width.
     Bv(usize),
+    /// Array sort: first field is the index bit width, second field is the element bit width.
     Array(usize, usize),
 }
 
@@ -41,11 +44,6 @@ impl Sort {
         } else {
             panic!()
         }
-    }
-
-    #[inline]
-    pub fn is_array(&self) -> bool {
-        matches!(self, Self::Array(_, _))
     }
 }
 

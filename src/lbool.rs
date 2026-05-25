@@ -288,6 +288,13 @@ impl From<LboolVec> for BitVec {
     }
 }
 
+impl From<&LboolVec> for BitVec {
+    fn from(lbv: &LboolVec) -> Self {
+        assert!(!lbv.any_x(), "LboolVec contains X values");
+        lbv.v.clone()
+    }
+}
+
 impl LboolVec {
     pub fn iter(&self) -> Iter<'_> {
         debug_assert_eq!(self.v.len(), self.m.len());

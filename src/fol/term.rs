@@ -252,7 +252,7 @@ impl Term {
         }
         let v = match self.deref() {
             TermType::Const(c) => Value::Bv(c.clone().into()),
-            TermType::Var(_) => Value::default_from(&self.sort()),
+            TermType::Var(_) => Value::default_from(self.sort()),
             TermType::Op(op_term) => {
                 let child_vals: Vec<Value> =
                     op_term.terms.iter().map(|t| t.simulate(val)).collect();

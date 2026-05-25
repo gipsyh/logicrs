@@ -4,19 +4,57 @@ use crate::{
 };
 use enum_as_inner::EnumAsInner;
 use giputils::hash::GHashMap;
+use std::ops::{Deref, DerefMut};
+
+#[derive(Clone, Debug)]
+pub struct ArrayValue {
+    value: GHashMap<usize, LboolVec>,
+    sort: Sort,
+}
+
+impl Deref for ArrayValue {
+    type Target = GHashMap<usize, LboolVec>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.value
+    }
+}
+
+impl DerefMut for ArrayValue {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.value
+    }
+}
+
+impl ArrayValue {
+    #[inline]
+    pub fn default_from(sort: Sort) -> Self {
+        Self {
+            value: GHashMap::default(),
+            sort,
+        }
+    }
+
+    #[inline]
+    pub fn sort(&self) -> Sort {
+        self.sort
+    }
+}
 
 #[derive(Clone, Debug, EnumAsInner)]
 pub enum Value {
     Bv(LboolVec),
-    Array(GHashMap<usize, LboolVec>),
+    Array(ArrayValue),
 }
 
 impl Value {
     #[inline]
-    pub fn default_from(sort: &Sort) -> Self {
+    pub fn default_from(sort: Sort) -> Self {
         match sort {
-            Sort::Bv(w) => Value::Bv(LboolVec::from_elem(Lbool::NONE, *w)),
-            Sort::Array(_, _) => Value::Array(GHashMap::default()),
+            Sort::Bv(w) => Value::Bv(LboolVec::from_elem(Lbool::NONE, w)),
+            Sort::Array(_, _) => Value::Array(ArrayValue::default_from(sort)),
         }
     }
 }
@@ -120,7 +158,7 @@ impl TermValue {
     pub fn into_array(&self) -> ArrayTermValue {
         ArrayTermValue {
             t: self.t.clone(),
-            v: self.v.clone().into_array().unwrap(),
+            v: self.v.clone().into_array().unwrap().value,
         }
     }
 }
