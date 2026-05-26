@@ -4,7 +4,7 @@ use crate::fol::op::{Concat, Slice};
 use crate::fol::{OpTrait, TermVec, Value, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
-use giputils::hash::GHashMap;
+use giputils::hash::{GHashMap, GHashSet};
 use std::cell::UnsafeCell;
 use std::fmt::{self, Debug};
 use std::hash;
@@ -462,20 +462,7 @@ impl Index<usize> for OpTerm {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Eq, Debug)]
-pub struct TermGC {
-    garbage: Vec<Term>,
-}
-
-impl TermGC {
-    #[inline]
-    pub fn collect(&mut self, term: Term) {
-        self.garbage.push(term);
-    }
-}
-
 struct TermManager {
-    _tgc: TermGC,
     avl_vid: usize,
     avl_tid: usize,
     map: GHashMap<TermType, Term>,
@@ -485,9 +472,6 @@ impl TermManager {
     #[inline]
     fn new() -> Self {
         Self {
-            _tgc: TermGC {
-                garbage: Vec::new(),
-            },
             avl_vid: 0,
             avl_tid: 0,
             map: GHashMap::new(),
@@ -523,8 +507,54 @@ impl TermManager {
     }
 
     #[inline]
-    #[allow(unused)]
-    fn garbage_collect(&mut self) {}
+    fn add_internal_ref(term: &Term, internal_refs: &mut GHashMap<*const TermInner, usize>) {
+        *internal_refs.entry(term.inner.as_ptr()).or_insert(0) += 1;
+    }
+
+    #[inline]
+    fn add_term_type_internal_refs(
+        ty: &TermType,
+        internal_refs: &mut GHashMap<*const TermInner, usize>,
+    ) {
+        if let TermType::Op(op) = ty {
+            for term in &op.terms {
+                Self::add_internal_ref(term, internal_refs);
+            }
+        }
+    }
+
+    fn garbage_collect(&mut self) {
+        let mut internal_refs = GHashMap::new();
+        for (ty, term) in self.map.iter() {
+            Self::add_internal_ref(term, &mut internal_refs);
+            Self::add_term_type_internal_refs(ty, &mut internal_refs);
+            Self::add_term_type_internal_refs(term.deref(), &mut internal_refs);
+        }
+
+        let mut stack: Vec<Term> = self
+            .map
+            .values()
+            .filter(|term| {
+                let ptr = term.inner.as_ptr();
+                let internal_refs = internal_refs.get(&ptr).copied().unwrap_or(0);
+                term.inner.count() > internal_refs
+            })
+            .cloned()
+            .collect();
+
+        let mut live = GHashSet::new();
+        while let Some(term) = stack.pop() {
+            if !live.insert(term.inner.as_ptr()) {
+                continue;
+            }
+            if let TermType::Op(op) = term.deref() {
+                stack.extend(op.terms.iter().cloned());
+            }
+        }
+
+        self.map
+            .retain(|_, term| live.contains(&term.inner.as_ptr()));
+    }
 }
 
 thread_local! {
@@ -534,4 +564,44 @@ thread_local! {
 #[inline]
 fn tm() -> &'static mut TermManager {
     TERM_MANAGER.with(|m| unsafe { &mut *m.get() })
+}
+
+pub fn term_gc() {
+    tm().garbage_collect();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn term_gc_collects_dead_dag() {
+        let c = Term::bool_const(true);
+        let c_id = c.id();
+        let x = Term::new_var(Sort::bool());
+        let expr = &c & &x;
+        drop(c);
+        drop(x);
+        drop(expr);
+
+        term_gc();
+
+        assert_ne!(Term::bool_const(true).id(), c_id);
+    }
+
+    #[test]
+    fn term_gc_keeps_reachable_child() {
+        let c = Term::bool_const(true);
+        let c_id = c.id();
+        let x = Term::new_var(Sort::bool());
+        let expr = &c & &x;
+        drop(c);
+        drop(x);
+
+        term_gc();
+
+        assert_eq!(Term::bool_const(true).id(), c_id);
+        drop(expr);
+        term_gc();
+    }
 }
