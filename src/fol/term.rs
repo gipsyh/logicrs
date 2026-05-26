@@ -5,6 +5,7 @@ use crate::fol::{OpTrait, TermVec, Value, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::{GHashMap, GHashSet};
+use log::debug;
 use std::cell::UnsafeCell;
 use std::fmt::{self, Debug};
 use std::hash;
@@ -524,6 +525,7 @@ impl TermManager {
     }
 
     fn garbage_collect(&mut self) {
+        let before = self.map.len();
         let mut internal_refs = GHashMap::new();
         for (ty, term) in self.map.iter() {
             Self::add_internal_ref(term, &mut internal_refs);
@@ -551,9 +553,16 @@ impl TermManager {
                 stack.extend(op.terms.iter().cloned());
             }
         }
-
         self.map
             .retain(|_, term| live.contains(&term.inner.as_ptr()));
+        let after = self.map.len();
+        self.map.shrink_to_fit();
+        debug!(
+            "term GC cleared {} terms ({} -> {})",
+            before - after,
+            before,
+            after
+        );
     }
 }
 
