@@ -1427,10 +1427,38 @@ impl RewriteRule for SliceOfSlice {
     }
 }
 
+struct SliceOfConcat;
+impl RewriteRule for SliceOfConcat {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let s = &terms[0];
+        let l = terms[2].bv_len();
+        let h = terms[1].bv_len();
+        let sop = s.try_op()?;
+        if sop.op != Concat {
+            return None;
+        }
+
+        let hi = &sop[0];
+        let lo = &sop[1];
+        let lo_len = lo.bv_len();
+        if h < lo_len {
+            return Some(lo.slice(l, h));
+        }
+        if l >= lo_len {
+            return Some(hi.slice(l - lo_len, h - lo_len));
+        }
+
+        let hi_part = hi.slice(0, h - lo_len);
+        let lo_part = lo.slice(l, lo_len - 1);
+        Some(Term::new_op(Concat, [hi_part, lo_part]))
+    }
+}
+
 pub(crate) fn slice_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(SliceWholeRange)
-        .with_rule(SliceOfSlice);
+        .with_rule(SliceOfSlice)
+        .with_rule(SliceOfConcat);
     pipeline.apply(terms)
 }
 

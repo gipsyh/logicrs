@@ -188,6 +188,23 @@ fn test_simplify_not_not() {
     assert_eq!(expr.simplify(&mut map), x);
 }
 
+#[test]
+fn test_simplify_slice_of_concat() {
+    let hi = Term::new_var(Sort::Bv(4));
+    let lo = Term::new_var(Sort::Bv(8));
+    let concat = hi.concat(&lo);
+
+    let mut map = GHashMap::new();
+    assert_eq!(concat.slice(1, 3).simplify(&mut map), lo.slice(1, 3));
+
+    let mut map = GHashMap::new();
+    assert_eq!(concat.slice(8, 10).simplify(&mut map), hi.slice(0, 2));
+
+    let mut map = GHashMap::new();
+    let expected = hi.slice(0, 1).concat(lo.slice(6, 7));
+    assert_eq!(concat.slice(6, 9).simplify(&mut map), expected);
+}
+
 // Regression tests for the Ult/Slt sort bug.
 //
 // Before the fix, FolOp::sort() returned terms[0].sort() (the operand width)
