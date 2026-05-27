@@ -138,6 +138,14 @@ impl Term {
     }
 
     #[inline]
+    pub fn try_bool_const(&self) -> Option<bool> {
+        match self.deref() {
+            TermType::Const(c) => c.try_bool(),
+            _ => None,
+        }
+    }
+
+    #[inline]
     pub fn op<'a>(
         &'a self,
         op: FolOp,
