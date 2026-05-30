@@ -250,7 +250,7 @@ impl RewriteRule for NotBoolXorEqSwap {
         let xop = x.try_op()?;
         if xop.op == Xor {
             Some(xop[0].op1(Eq, &xop[1]))
-        } else if xop.op == Eq {
+        } else if xop.op == Eq && xop[0].is_bool() {
             Some(xop[0].op1(Xor, &xop[1]))
         } else {
             None
@@ -1218,6 +1218,72 @@ pub(crate) fn ult_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     pipeline.apply(terms)
 }
 
+fn is_signed_min(c: &BitVec) -> bool {
+    if !c.get(c.len() - 1) {
+        return false;
+    }
+    c.iter().take(c.len() - 1).all(|bit| !bit)
+}
+
+fn is_signed_max(c: &BitVec) -> bool {
+    if c.get(c.len() - 1) {
+        return false;
+    }
+    c.iter().take(c.len() - 1).all(|bit| bit)
+}
+
+struct SltRefl;
+impl RewriteRule for SltRefl {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+        if x == y {
+            return Some(Term::bool_const(false));
+        }
+        None
+    }
+}
+
+struct SltConstX;
+impl RewriteRule for SltConstX {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+        let xc = x.try_bv_const()?;
+        if is_signed_min(xc) {
+            return Some(!x.op1(Eq, y));
+        }
+        if is_signed_max(xc) {
+            return Some(Term::bool_const(false));
+        }
+        None
+    }
+}
+
+struct SltConstY;
+impl RewriteRule for SltConstY {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+        let yc = y.try_bv_const()?;
+        if is_signed_min(yc) {
+            return Some(Term::bool_const(false));
+        }
+        if is_signed_max(yc) {
+            return Some(!x.op1(Eq, y));
+        }
+        None
+    }
+}
+
+pub(crate) fn slt_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    let pipeline = RewritePipeline::new(ctx.level)
+        .with_rule(SltRefl)
+        .with_rule(SltConstX)
+        .with_rule(SltConstY);
+    pipeline.apply(terms)
+}
+
 struct IteConstCond;
 impl RewriteRule for IteConstCond {
     fn apply(&self, terms: &[Term]) -> TermResult {
@@ -1669,6 +1735,7 @@ impl FolOp {
             FolOp::Xor => xor_simplify(ctx, terms),
             FolOp::Eq => eq_simplify(ctx, terms),
             FolOp::Ult => ult_simplify(ctx, terms),
+            FolOp::Slt => slt_simplify(ctx, terms),
             FolOp::Ite => ite_simplify(ctx, terms),
             FolOp::Concat => concat_simplify(ctx, terms),
             FolOp::Sext => sext_simplify(ctx, terms),

@@ -1,5 +1,6 @@
 use super::{Sort, Term, Value};
 use crate::LboolVec;
+use giputils::bitvec::BitVec;
 use giputils::hash::GHashMap;
 
 fn bv_val(s: &str) -> Value {
@@ -186,6 +187,59 @@ fn test_simplify_not_not() {
     let expr = !!&x;
     let mut map = GHashMap::new();
     assert_eq!(expr.simplify(&mut map), x);
+}
+
+fn signed_min(width: usize) -> Term {
+    let mut c = BitVec::zero(width);
+    c.set(width - 1, true);
+    Term::bv_const(c)
+}
+
+fn signed_max(width: usize) -> Term {
+    let mut c = BitVec::ones(width);
+    c.set(width - 1, false);
+    Term::bv_const(c)
+}
+
+#[test]
+fn test_simplify_slt_identities() {
+    let x = Term::new_var(Sort::Bv(8));
+    let mut map = GHashMap::new();
+    assert_eq!(
+        x.op1(super::op::FolOp::Slt, &x).simplify(&mut map),
+        Term::bool_const(false)
+    );
+}
+
+#[test]
+fn test_simplify_slt_signed_extremes() {
+    let x = Term::new_var(Sort::Bv(8));
+    let min = signed_min(8);
+    let max = signed_max(8);
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        min.op1(super::op::FolOp::Slt, &x).simplify(&mut map),
+        !min.op1(super::op::FolOp::Eq, &x)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        max.op1(super::op::FolOp::Slt, &x).simplify(&mut map),
+        Term::bool_const(false)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        x.op1(super::op::FolOp::Slt, &min).simplify(&mut map),
+        Term::bool_const(false)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        x.op1(super::op::FolOp::Slt, &max).simplify(&mut map),
+        !x.op1(super::op::FolOp::Eq, &max)
+    );
 }
 
 #[test]
