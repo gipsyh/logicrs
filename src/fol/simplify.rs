@@ -52,7 +52,7 @@ impl SimplifyCtx {
 trait RewriteRule {
     #[inline]
     fn opt_level(&self) -> OptLevel {
-        OptLevel::O1
+        OptLevel::O0
     }
 
     fn apply(&self, terms: &[Term]) -> TermResult;
@@ -240,23 +240,26 @@ fn or_eq_term_consts_one_bit_diff(x: &Term, c1: &BitVec, c2: &BitVec) -> Option<
     Some(masked.op1(Eq, &c))
 }
 
-struct NotXorBoolToEq;
-impl RewriteRule for NotXorBoolToEq {
+struct NotBoolXorEqSwap;
+impl RewriteRule for NotBoolXorEqSwap {
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         if !x.is_bool() {
             return None;
         }
         let xop = x.try_op()?;
-        if xop.op != Xor {
-            return None;
+        if xop.op == Xor {
+            Some(xop[0].op1(Eq, &xop[1]))
+        } else if xop.op == Eq {
+            Some(xop[0].op1(Xor, &xop[1]))
+        } else {
+            None
         }
-        Some(xop[0].op1(Eq, &xop[1]))
     }
 }
 
 pub(crate) fn not_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
-    let pipeline = RewritePipeline::new(ctx.level).with_rule(NotXorBoolToEq);
+    let pipeline = RewritePipeline::new(ctx.level).with_rule(NotBoolXorEqSwap);
     pipeline.apply(terms)
 }
 
@@ -1595,24 +1598,19 @@ impl Term {
         if let Some(res) = map.get(self) {
             return res.clone();
         }
-        let simp = match ctx.level {
-            OptLevel::O0 => self.clone(),
-            _ => {
-                if let Some(op_term) = self.try_op() {
-                    let terms: Vec<Term> = op_term
-                        .terms
-                        .iter()
-                        .map(|s| s.simplify_with_ctx(ctx, map))
-                        .collect();
-                    if let Some(res) = op_simplify(ctx, op_term.op, &terms) {
-                        res.simplify_with_ctx(ctx, map)
-                    } else {
-                        Term::new_op(op_term.op, terms)
-                    }
-                } else {
-                    self.clone()
-                }
+        let simp = if let Some(op_term) = self.try_op() {
+            let terms: Vec<Term> = op_term
+                .terms
+                .iter()
+                .map(|s| s.simplify_with_ctx(ctx, map))
+                .collect();
+            if let Some(res) = op_simplify(ctx, op_term.op, &terms) {
+                res.simplify_with_ctx(ctx, map)
+            } else {
+                Term::new_op(op_term.op, terms)
             }
+        } else {
+            self.clone()
         };
         map.insert(self.clone(), simp);
         map.get(self).unwrap().clone()
