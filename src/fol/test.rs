@@ -1,8 +1,8 @@
 use super::op::FolOp;
 use super::simplify::SimplifyCtx;
 use super::{Sort, Term, Value};
-use crate::OptLevel;
 use crate::LboolVec;
+use crate::OptLevel;
 use giputils::bitvec::BitVec;
 use giputils::hash::GHashMap;
 
@@ -263,6 +263,71 @@ fn test_simplify_slice_of_concat() {
 }
 
 #[test]
+fn test_simplify_slice_pushdown_patterns() {
+    let ctx = SimplifyCtx::new(OptLevel::O3);
+    let c = Term::new_var(Sort::bool());
+    let x = Term::new_var(Sort::Bv(8));
+    let y = Term::new_var(Sort::Bv(8));
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        c.ite(&x, &y).slice(2, 4).simplify_with_ctx(&ctx, &mut map),
+        c.ite(x.slice(2, 4), y.slice(2, 4))
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        (&x & &y).slice(2, 4).simplify_with_ctx(&ctx, &mut map),
+        x.slice(2, 4) & y.slice(2, 4)
+    );
+
+    let ext = Term::new_op(FolOp::Sext, [&x, &Term::bv_const(BitVec::zero(4))]);
+    let mut map = GHashMap::new();
+    assert_eq!(
+        ext.slice(1, 3).simplify_with_ctx(&ctx, &mut map),
+        x.slice(1, 3)
+    );
+}
+
+#[test]
+fn test_simplify_low_bit_arith_shift_patterns() {
+    let ctx = SimplifyCtx::new(OptLevel::O3);
+    let x = Term::new_var(Sort::Bv(8));
+    let y = Term::new_var(Sort::Bv(8));
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        (&x + &y).slice(0, 0).simplify_with_ctx(&ctx, &mut map),
+        x.slice(0, 0) ^ y.slice(0, 0)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        (&x - &y).slice(0, 0).simplify_with_ctx(&ctx, &mut map),
+        x.slice(0, 0) ^ y.slice(0, 0)
+    );
+
+    let mut map = GHashMap::new();
+    let sll = x.op1(FolOp::Sll, &y);
+    assert_eq!(
+        sll.slice(0, 0).simplify_with_ctx(&ctx, &mut map),
+        y.op1(FolOp::Eq, y.mk_bv_const_zero()) & x.slice(0, 0)
+    );
+}
+
+#[test]
+fn test_simplify_nonnegative_slt_bound() {
+    let x = Term::new_var(Sort::Bv(6));
+    let zx = Term::bv_const(BitVec::zero(2)).concat(&x);
+    let bound = Term::bv_const(BitVec::from("01000000"));
+    let mut map = GHashMap::new();
+    assert_eq!(
+        zx.op1(FolOp::Slt, &bound).simplify(&mut map),
+        Term::bool_const(true)
+    );
+}
+
+#[test]
 fn test_simplify_bool_mask_patterns() {
     let ctx = SimplifyCtx::new(OptLevel::O3);
     let c = Term::new_var(Sort::bool());
@@ -270,7 +335,10 @@ fn test_simplify_bool_mask_patterns() {
     let mask = c.ite(x.mk_bv_const_ones(), x.mk_bv_const_zero());
 
     let mut map = GHashMap::new();
-    assert_eq!((&x & &mask).simplify_with_ctx(&ctx, &mut map), c.ite(&x, x.mk_bv_const_zero()));
+    assert_eq!(
+        (&x & &mask).simplify_with_ctx(&ctx, &mut map),
+        c.ite(&x, x.mk_bv_const_zero())
+    );
 
     let mut map = GHashMap::new();
     assert_eq!(
@@ -288,6 +356,21 @@ fn test_simplify_bool_mask_patterns() {
     let mut map = GHashMap::new();
     let masked_mux = ((&x & !&mask) | (&y & &mask)).simplify_with_ctx(&ctx, &mut map);
     assert_eq!(masked_mux, c.ite(&y, &x));
+
+    let sext_mask = Term::new_op(FolOp::Sext, [&c, &Term::bv_const(BitVec::zero(7))]);
+    let mut map = GHashMap::new();
+    assert_eq!(
+        (&x & &sext_mask).simplify_with_ctx(&ctx, &mut map),
+        c.ite(&x, x.mk_bv_const_zero())
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        sext_mask
+            .op1(FolOp::Eq, sext_mask.mk_bv_const_zero())
+            .simplify_with_ctx(&ctx, &mut map),
+        !&c
+    );
 }
 
 #[test]

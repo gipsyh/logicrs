@@ -178,6 +178,29 @@ fn bool_mask_ite(term: &Term) -> Option<(Term, bool)> {
     }
 }
 
+fn nonnegative_value_bits(term: &Term) -> Option<usize> {
+    if let Some(c) = term.try_bv_const() {
+        if c.sign_bit() {
+            return None;
+        }
+        return Some(c.iter().rposition(|bit| bit).map_or(0, |idx| idx + 1));
+    }
+
+    let op = term.try_op()?;
+    match op.op {
+        Concat => {
+            let prefix = op[0].try_bv_const()?;
+            if prefix.is_zero() {
+                Some(op[1].bv_len())
+            } else {
+                None
+            }
+        }
+        Sext => nonnegative_value_bits(&op[0]),
+        _ => None,
+    }
+}
+
 fn ite_zero_branch(term: &Term) -> Option<(Term, Term, bool)> {
     let op = term.try_op()?;
     if op.op != Ite {
@@ -1330,14 +1353,14 @@ pub(crate) fn ult_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
 }
 
 fn is_signed_min(c: &BitVec) -> bool {
-    if !c.get(c.len() - 1) {
+    if !c.sign_bit() {
         return false;
     }
     c.iter().take(c.len() - 1).all(|bit| !bit)
 }
 
 fn is_signed_max(c: &BitVec) -> bool {
-    if c.get(c.len() - 1) {
+    if c.sign_bit() {
         return false;
     }
     c.iter().take(c.len() - 1).all(|bit| bit)
@@ -1387,11 +1410,30 @@ impl RewriteRule for SltConstY {
     }
 }
 
+struct SltNonnegativeBound;
+impl RewriteRule for SltNonnegativeBound {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+        let yc = y.try_bv_const()?;
+        let x_bits = nonnegative_value_bits(x)?;
+
+        if yc.is_zero() || yc.sign_bit() {
+            return Some(Term::bool_const(false));
+        }
+        if yc.iter().enumerate().any(|(idx, bit)| bit && idx >= x_bits) {
+            return Some(Term::bool_const(true));
+        }
+        None
+    }
+}
+
 pub(crate) fn slt_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(SltRefl)
         .with_rule(SltConstX)
-        .with_rule(SltConstY);
+        .with_rule(SltConstY)
+        .with_rule(SltNonnegativeBound);
     pipeline.apply(terms)
 }
 
@@ -1735,6 +1777,22 @@ impl RewriteRule for SextZeroExt {
     }
 }
 
+struct SextBoolToIte;
+
+impl RewriteRule for SextBoolToIte {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let ext = terms[1].bv_len();
+        if !x.is_bool() {
+            return None;
+        }
+        TermResult::Some(x.ite(
+            Term::bv_const(BitVec::ones(ext + 1)),
+            Term::bv_const(BitVec::zero(ext + 1)),
+        ))
+    }
+}
+
 struct SextMergeNested;
 impl RewriteRule for SextMergeNested {
     fn apply(&self, terms: &[Term]) -> TermResult {
@@ -1756,6 +1814,7 @@ impl RewriteRule for SextMergeNested {
 pub(crate) fn sext_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(SextZeroExt)
+        .with_rule(SextBoolToIte)
         .with_rule(SextMergeNested);
     pipeline.apply(terms)
 }
@@ -1818,12 +1877,153 @@ impl RewriteRule for SliceOfConcat {
     }
 }
 
+struct SliceOfSext;
+impl RewriteRule for SliceOfSext {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let s = &terms[0];
+        let l = terms[2].bv_len();
+        let h = terms[1].bv_len();
+        let sop = s.try_op()?;
+        if sop.op != Sext {
+            return None;
+        }
+
+        let base = &sop[0];
+        if h < base.bv_len() {
+            return Some(base.slice(l, h));
+        }
+        if l >= base.bv_len() {
+            let sign = base.slice(base.bv_len() - 1, base.bv_len() - 1);
+            return Some(Term::new_op(
+                Sext,
+                [sign, Term::bv_const(BitVec::zero(h - l))],
+            ));
+        }
+
+        let ext_len = h - base.bv_len() + 1;
+        Some(Term::new_op(
+            Sext,
+            [
+                base.slice(l, base.bv_len() - 1),
+                Term::bv_const(BitVec::zero(ext_len)),
+            ],
+        ))
+    }
+}
+
+struct SliceOfIte;
+impl RewriteRule for SliceOfIte {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let s = &terms[0];
+        let l = terms[2].bv_len();
+        let h = terms[1].bv_len();
+        let sop = s.try_op()?;
+        if sop.op != Ite {
+            return None;
+        }
+        Some(sop[0].ite(sop[1].slice(l, h), sop[2].slice(l, h)))
+    }
+}
+
+struct SliceOfBitwiseOp;
+impl RewriteRule for SliceOfBitwiseOp {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let s = &terms[0];
+        let l = terms[2].bv_len();
+        let h = terms[1].bv_len();
+        let sop = s.try_op()?;
+        match sop.op {
+            Not => Some(!sop[0].slice(l, h)),
+            And | Or | Xor => Some(Term::new_op(
+                sop.op,
+                [sop[0].slice(l, h), sop[1].slice(l, h)],
+            )),
+            _ => None,
+        }
+    }
+}
+
+struct SliceLsbOfAddSub;
+impl RewriteRule for SliceLsbOfAddSub {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let s = &terms[0];
+        let l = terms[2].bv_len();
+        let h = terms[1].bv_len();
+        if l != 0 || h != 0 {
+            return None;
+        }
+        let sop = s.try_op()?;
+        if sop.op != Add && sop.op != Sub {
+            return None;
+        }
+        Some(sop[0].slice(0, 0) ^ sop[1].slice(0, 0))
+    }
+}
+
+struct SliceLsbOfSll;
+impl RewriteRule for SliceLsbOfSll {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let s = &terms[0];
+        let l = terms[2].bv_len();
+        let h = terms[1].bv_len();
+        if l != 0 || h != 0 {
+            return None;
+        }
+        let sop = s.try_op()?;
+        if sop.op != Sll {
+            return None;
+        }
+        let shift_is_zero = sop[1].op1(Eq, sop[1].mk_bv_const_zero());
+        Some(shift_is_zero & sop[0].slice(0, 0))
+    }
+}
+
 pub(crate) fn slice_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(SliceWholeRange)
         .with_rule(SliceOfSlice)
-        .with_rule(SliceOfConcat);
+        .with_rule(SliceOfConcat)
+        .with_rule(SliceOfSext)
+        .with_rule(SliceOfIte)
+        .with_rule(SliceOfBitwiseOp)
+        .with_rule(SliceLsbOfAddSub)
+        .with_rule(SliceLsbOfSll);
     pipeline.apply(terms)
+}
+
+struct AddByZero;
+impl RewriteRule for AddByZero {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+        let xc = x.try_bv_const()?;
+        if xc.is_zero() {
+            return Some(y.clone());
+        }
+        None
+    }
+}
+
+pub(crate) fn add_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    RewritePipeline::new(ctx.level)
+        .with_rule(AddByZero)
+        .apply(terms)
 }
 
 struct SubByZero;
@@ -1987,6 +2187,7 @@ impl FolOp {
             FolOp::Concat => concat_simplify(ctx, terms),
             FolOp::Sext => sext_simplify(ctx, terms),
             FolOp::Slice => slice_simplify(ctx, terms),
+            FolOp::Add => add_simplify(ctx, terms),
             FolOp::Sub => sub_simplify(ctx, terms),
             FolOp::Mul => mul_simplify(ctx, terms),
             FolOp::Udiv => udiv_simplify(ctx, terms),
