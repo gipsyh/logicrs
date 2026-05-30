@@ -160,6 +160,43 @@ fn eq_term_const(term: &Term) -> Option<(Term, BitVec)> {
     None
 }
 
+fn bool_mask_ite(term: &Term) -> Option<(Term, bool)> {
+    let op = term.try_op()?;
+
+    if op.op != Ite {
+        return None;
+    }
+
+    let tc = op[1].try_bv_const()?;
+    let ec = op[2].try_bv_const()?;
+    if tc.is_ones() && ec.is_zero() {
+        Some((op[0].clone(), true))
+    } else if tc.is_zero() && ec.is_ones() {
+        Some((op[0].clone(), false))
+    } else {
+        None
+    }
+}
+
+fn ite_zero_branch(term: &Term) -> Option<(Term, Term, bool)> {
+    let op = term.try_op()?;
+    if op.op != Ite {
+        return None;
+    }
+    if op[2].try_bv_const().is_some_and(|c| c.is_zero()) {
+        return Some((op[0].clone(), op[1].clone(), true));
+    }
+    if op[1].try_bv_const().is_some_and(|c| c.is_zero()) {
+        return Some((op[0].clone(), op[2].clone(), false));
+    }
+    None
+}
+
+fn is_same_read(term: &Term, array: &Term, index: &Term) -> bool {
+    term.try_op()
+        .is_some_and(|op| op.op == Read && op[0] == *array && op[1] == *index)
+}
+
 fn single_bit_diff_idx(a: &BitVec, b: &BitVec) -> Option<usize> {
     if a.len() != b.len() {
         return None;
@@ -236,8 +273,31 @@ impl RewriteRule for NotBoolXorEqSwap {
     }
 }
 
+struct NotIteConst;
+
+impl RewriteRule for NotIteConst {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let xop = x.try_op()?;
+        if xop.op != Ite {
+            return None;
+        }
+        if xop[1].is_const() && xop[2].is_const() {
+            TermResult::Some(xop[0].ite(!&xop[1], !&xop[2]))
+        } else {
+            None
+        }
+    }
+}
+
 pub(crate) fn not_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
-    let pipeline = RewritePipeline::new(ctx.level).with_rule(NotBoolXorEqSwap);
+    let pipeline = RewritePipeline::new(ctx.level)
+        .with_rule(NotBoolXorEqSwap)
+        .with_rule(NotIteConst);
     pipeline.apply(terms)
 }
 
@@ -267,6 +327,25 @@ impl RewriteRule for AndComplement {
             return Some(a.mk_bv_const_zero());
         }
         None
+    }
+}
+
+struct AndBoolMask;
+impl RewriteRule for AndBoolMask {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let mask = &terms[1];
+        let (cond, positive) = bool_mask_ite(mask)?;
+        let zero = x.mk_bv_const_zero();
+        if positive {
+            Some(cond.ite(x, zero))
+        } else {
+            Some(cond.ite(zero, x))
+        }
     }
 }
 
@@ -553,6 +632,7 @@ pub(crate) fn and_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(AndConstPropagation)
         .with_rule(AndComplement)
+        .with_rule(AndBoolMask)
         .with_rule(AndMergeNestedAnds)
         .with_rule(AndDeMorganNotNot)
         .with_rule(AndAbsorbComplementInOr)
@@ -702,6 +782,36 @@ impl RewriteRule for OrAbsorbIteCond {
             return Some(b | &aop[1]);
         }
         None
+    }
+}
+
+struct OrMergeIteZeroBranches;
+impl RewriteRule for OrMergeIteZeroBranches {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let a = &terms[0];
+        let b = &terms[1];
+        let (ac, av, a_when_true) = ite_zero_branch(a)?;
+        let (bc, bv, b_when_true) = ite_zero_branch(b)?;
+        if ac != bc {
+            return None;
+        }
+
+        match (a_when_true, b_when_true) {
+            (true, false) => Some(ac.ite(av, bv)),
+            (false, true) => Some(ac.ite(bv, av)),
+            (true, true) => {
+                let zero = a.mk_bv_const_zero();
+                Some(ac.ite(av | bv, zero))
+            }
+            (false, false) => {
+                let zero = a.mk_bv_const_zero();
+                Some(ac.ite(zero, av | bv))
+            }
+        }
     }
 }
 
@@ -956,6 +1066,7 @@ pub(crate) fn or_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(OrAbsorbComplementInAnd)
         .with_rule(OrDistributeOverAnd)
         .with_rule(OrAbsorbIteCond)
+        .with_rule(OrMergeIteZeroBranches)
         .with_rule(OrMergeEqConstOneBitDiff)
         .with_rule(OrMergeEqConstOneBitDiffAssoc)
         .with_rule(OrBitLevelClauseReconstruction)
@@ -1069,6 +1180,27 @@ impl RewriteRule for EqComplement {
     }
 }
 
+struct EqBoolMaskConst;
+impl RewriteRule for EqBoolMaskConst {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+        let (cond, positive) = bool_mask_ite(x)?;
+        let yc = y.try_bv_const()?;
+        if yc.is_zero() {
+            return Some(cond.not_if(positive));
+        }
+        if yc.is_ones() {
+            return Some(cond.not_if(!positive));
+        }
+        None
+    }
+}
+
 struct EqNotConst;
 impl RewriteRule for EqNotConst {
     fn opt_level(&self) -> OptLevel {
@@ -1150,6 +1282,7 @@ pub(crate) fn eq_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(EqBoolViaXor)
         .with_rule(EqRefl)
         .with_rule(EqComplement)
+        .with_rule(EqBoolMaskConst)
         .with_rule(EqNotConst)
         .with_rule(EqXorZero);
     pipeline.apply(terms)
@@ -1358,13 +1491,105 @@ impl RewriteRule for IteBoolBranchConst {
     }
 }
 
+struct IteSameCondNested;
+impl RewriteRule for IteSameCondNested {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
+
+        if let Some(top) = t.try_op()
+            && top.op == Ite
+            && top[0] == *c
+        {
+            if top[2] == *e {
+                return Some(t.clone());
+            }
+            if top[1] == *e {
+                return Some(e.clone());
+            }
+        }
+
+        if let Some(eop) = e.try_op()
+            && eop.op == Ite
+            && eop[0] == *c
+        {
+            if eop[1] == *t {
+                return Some(e.clone());
+            }
+            if eop[2] == *t {
+                return Some(t.clone());
+            }
+        }
+
+        None
+    }
+}
+
+struct IteWriteBranches;
+impl RewriteRule for IteWriteBranches {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
+
+        if let (Some(top), Some(eop)) = (t.try_op(), e.try_op())
+            && top.op == Write
+            && eop.op == Write
+            && top[0] == eop[0]
+            && top[1] == eop[1]
+        {
+            let value = c.ite(&top[2], &eop[2]);
+            return Some(Term::new_op(Write, [top[0].clone(), top[1].clone(), value]));
+        }
+
+        if let Some(top) = t.try_op()
+            && top.op == Write
+            && top[0] == *e
+            && let Some(vop) = top[2].try_op()
+            && vop.op == Ite
+            && vop[0] == *c
+        {
+            if is_same_read(&vop[2], &top[0], &top[1]) {
+                return Some(t.clone());
+            }
+            if is_same_read(&vop[1], &top[0], &top[1]) {
+                return Some(e.clone());
+            }
+        }
+
+        if let Some(eop) = e.try_op()
+            && eop.op == Write
+            && eop[0] == *t
+            && let Some(vop) = eop[2].try_op()
+            && vop.op == Ite
+            && vop[0] == *c
+        {
+            if is_same_read(&vop[1], &eop[0], &eop[1]) {
+                return Some(e.clone());
+            }
+            if is_same_read(&vop[2], &eop[0], &eop[1]) {
+                return Some(t.clone());
+            }
+        }
+
+        None
+    }
+}
+
 pub(crate) fn ite_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(IteConstCond)
         .with_rule(IteSameBranches)
         .with_rule(IteNotCondSwap)
         .with_rule(IteBoolComplementBranches)
-        .with_rule(IteBoolBranchConst);
+        .with_rule(IteBoolBranchConst)
+        .with_rule(IteSameCondNested)
+        .with_rule(IteWriteBranches);
     pipeline.apply(terms)
 }
 
@@ -1669,6 +1894,50 @@ pub(crate) fn udiv_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     RewritePipeline::new(ctx.level).apply(terms)
 }
 
+struct ReadOverWriteSameIndex;
+impl RewriteRule for ReadOverWriteSameIndex {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let (array, index) = (&terms[0], &terms[1]);
+        let aop = array.try_op()?;
+        if aop.op != Write || aop[1] != *index {
+            return None;
+        }
+        Some(aop[2].clone())
+    }
+}
+
+pub(crate) fn read_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    RewritePipeline::new(ctx.level)
+        .with_rule(ReadOverWriteSameIndex)
+        .apply(terms)
+}
+
+struct WriteSameValue;
+impl RewriteRule for WriteSameValue {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let (array, index, value) = (&terms[0], &terms[1], &terms[2]);
+        if is_same_read(value, array, index) {
+            Some(array.clone())
+        } else {
+            None
+        }
+    }
+}
+
+pub(crate) fn write_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    RewritePipeline::new(ctx.level)
+        .with_rule(WriteSameValue)
+        .apply(terms)
+}
+
 fn op_simplify(ctx: &SimplifyCtx, op: FolOp, terms: &[Term]) -> TermResult {
     // Constant propagation
     if terms.iter().all(|t| t.is_const()) {
@@ -1721,6 +1990,8 @@ impl FolOp {
             FolOp::Sub => sub_simplify(ctx, terms),
             FolOp::Mul => mul_simplify(ctx, terms),
             FolOp::Udiv => udiv_simplify(ctx, terms),
+            FolOp::Read => read_simplify(ctx, terms),
+            FolOp::Write => write_simplify(ctx, terms),
             _ => None,
         }
     }

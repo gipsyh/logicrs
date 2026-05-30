@@ -1,4 +1,7 @@
+use super::op::FolOp;
+use super::simplify::SimplifyCtx;
 use super::{Sort, Term, Value};
+use crate::OptLevel;
 use crate::LboolVec;
 use giputils::bitvec::BitVec;
 use giputils::hash::GHashMap;
@@ -257,6 +260,66 @@ fn test_simplify_slice_of_concat() {
     let mut map = GHashMap::new();
     let expected = hi.slice(0, 1).concat(lo.slice(6, 7));
     assert_eq!(concat.slice(6, 9).simplify(&mut map), expected);
+}
+
+#[test]
+fn test_simplify_bool_mask_patterns() {
+    let ctx = SimplifyCtx::new(OptLevel::O3);
+    let c = Term::new_var(Sort::bool());
+    let x = Term::new_var(Sort::Bv(8));
+    let mask = c.ite(x.mk_bv_const_ones(), x.mk_bv_const_zero());
+
+    let mut map = GHashMap::new();
+    assert_eq!((&x & &mask).simplify_with_ctx(&ctx, &mut map), c.ite(&x, x.mk_bv_const_zero()));
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        (&x & !&mask).simplify_with_ctx(&ctx, &mut map),
+        c.ite(x.mk_bv_const_zero(), &x)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        (mask.op1(FolOp::Eq, x.mk_bv_const_zero())).simplify_with_ctx(&ctx, &mut map),
+        !&c
+    );
+
+    let y = Term::new_var(Sort::Bv(8));
+    let mut map = GHashMap::new();
+    let masked_mux = ((&x & !&mask) | (&y & &mask)).simplify_with_ctx(&ctx, &mut map);
+    assert_eq!(masked_mux, c.ite(&y, &x));
+}
+
+#[test]
+fn test_simplify_array_same_index_patterns() {
+    let ctx = SimplifyCtx::new(OptLevel::O3);
+    let c = Term::new_var(Sort::bool());
+    let array = Term::new_var(Sort::Array(3, 8));
+    let index = Term::new_var(Sort::Bv(3));
+    let value = Term::new_var(Sort::Bv(8));
+    let read = Term::new_op(FolOp::Read, [&array, &index]);
+    let write = Term::new_op(FolOp::Write, [&array, &index, &value]);
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        Term::new_op(FolOp::Read, [&write, &index]).simplify_with_ctx(&ctx, &mut map),
+        value
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        Term::new_op(FolOp::Write, [&array, &index, &read]).simplify_with_ctx(&ctx, &mut map),
+        array
+    );
+
+    let conditional_value = c.ite(&value, &read);
+    let conditional_write = Term::new_op(FolOp::Write, [&array, &index, &conditional_value]);
+    let mut map = GHashMap::new();
+    assert_eq!(
+        c.ite(&conditional_write, &array)
+            .simplify_with_ctx(&ctx, &mut map),
+        conditional_write
+    );
 }
 
 // Regression tests for the Ult/Slt sort bug.
