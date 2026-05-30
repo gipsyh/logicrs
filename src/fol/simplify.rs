@@ -294,6 +294,10 @@ impl RewriteRule for AndComplement {
 
 struct AndMergeNestedAnds;
 impl RewriteRule for AndMergeNestedAnds {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -328,6 +332,10 @@ impl RewriteRule for AndMergeNestedAnds {
 
 struct AndDeMorganNotNot;
 impl RewriteRule for AndDeMorganNotNot {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -344,6 +352,10 @@ impl RewriteRule for AndDeMorganNotNot {
 
 struct AndAbsorbComplementInOr;
 impl RewriteRule for AndAbsorbComplementInOr {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -372,6 +384,10 @@ impl RewriteRule for AndAbsorbComplementInOr {
 
 struct AndDistributeOverOr;
 impl RewriteRule for AndDistributeOverOr {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -405,6 +421,10 @@ impl RewriteRule for AndDistributeOverOr {
 
 struct AndMergeAdjacentEqSliceConsts;
 impl RewriteRule for AndMergeAdjacentEqSliceConsts {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O2
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -431,6 +451,10 @@ impl RewriteRule for AndMergeAdjacentEqSliceConsts {
 
 struct AndBitLevelEqReconstruction;
 impl RewriteRule for AndBitLevelEqReconstruction {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O2
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -592,6 +616,10 @@ impl RewriteRule for OrComplement {
 
 struct OrMergeNestedOrs;
 impl RewriteRule for OrMergeNestedOrs {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -626,6 +654,10 @@ impl RewriteRule for OrMergeNestedOrs {
 
 struct OrDeMorganNotNot;
 impl RewriteRule for OrDeMorganNotNot {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -642,6 +674,10 @@ impl RewriteRule for OrDeMorganNotNot {
 
 struct OrAbsorbComplementInAnd;
 impl RewriteRule for OrAbsorbComplementInAnd {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -670,6 +706,10 @@ impl RewriteRule for OrAbsorbComplementInAnd {
 
 struct OrAbsorbIteCond;
 impl RewriteRule for OrAbsorbIteCond {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -689,6 +729,10 @@ impl RewriteRule for OrAbsorbIteCond {
 
 struct OrDistributeOverAnd;
 impl RewriteRule for OrDistributeOverAnd {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -722,6 +766,10 @@ impl RewriteRule for OrDistributeOverAnd {
 
 struct OrMergeEqConstOneBitDiff;
 impl RewriteRule for OrMergeEqConstOneBitDiff {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O2
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -799,6 +847,10 @@ impl RewriteRule for OrMergeEqConstOneBitDiffAssoc {
 
 struct OrBitLevelClauseReconstruction;
 impl RewriteRule for OrBitLevelClauseReconstruction {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O2
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let a = &terms[0];
         let b = &terms[1];
@@ -984,6 +1036,10 @@ pub(crate) fn xor_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
 
 struct EqBoolViaXor;
 impl RewriteRule for EqBoolViaXor {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let y = &terms[1];
@@ -1037,6 +1093,10 @@ impl RewriteRule for EqComplement {
 
 struct EqNotConst;
 impl RewriteRule for EqNotConst {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let y = &terms[1];
@@ -1080,6 +1140,10 @@ impl RewriteRule for EqNotConst {
 
 struct EqXorZero;
 impl RewriteRule for EqXorZero {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let y = &terms[1];
@@ -1180,6 +1244,10 @@ impl RewriteRule for IteSameBranches {
 
 struct IteNotCondSwap;
 impl RewriteRule for IteNotCondSwap {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
         let cop = c.try_op()?;
@@ -1192,6 +1260,10 @@ impl RewriteRule for IteNotCondSwap {
 
 struct IteBoolComplementBranches;
 impl RewriteRule for IteBoolComplementBranches {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
         if !t.is_bool() {
@@ -1212,6 +1284,10 @@ impl RewriteRule for IteBoolComplementBranches {
 
 struct IteBoolBranchConst;
 impl RewriteRule for IteBoolBranchConst {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
         if !t.is_bool() {
@@ -1262,6 +1338,10 @@ impl RewriteRule for ConcatConst {
 
 struct ConcatAssocConstPrefix;
 impl RewriteRule for ConcatAssocConstPrefix {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let y = &terms[1];
@@ -1282,6 +1362,10 @@ impl RewriteRule for ConcatAssocConstPrefix {
 
 struct ConcatSignExtBySlice;
 impl RewriteRule for ConcatSignExtBySlice {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let y = &terms[1];
@@ -1302,6 +1386,10 @@ impl RewriteRule for ConcatSignExtBySlice {
 
 struct ConcatSignExtBySextSlice;
 impl RewriteRule for ConcatSignExtBySextSlice {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O2
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let y = &terms[1];
@@ -1337,6 +1425,10 @@ impl RewriteRule for ConcatSignExtBySextSlice {
 
 struct ConcatSignExtByMsbTerm;
 impl RewriteRule for ConcatSignExtByMsbTerm {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O2
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let y = &terms[1];
