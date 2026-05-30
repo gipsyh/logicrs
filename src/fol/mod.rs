@@ -1,7 +1,7 @@
 pub mod bitblast;
 mod op;
 mod replace;
-mod simplify;
+pub mod simplify;
 mod simulate;
 mod sort;
 mod term;

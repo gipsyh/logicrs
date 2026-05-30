@@ -1,32 +1,10 @@
 use super::Term;
+use crate::OptLevel;
 use crate::fol::TermResult;
 use crate::fol::Value;
 use crate::fol::op::*;
 use giputils::bitvec::BitVec;
 use giputils::hash::GHashMap;
-
-/// Compiler-style optimization level used by simplification/canonicalization.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum OptLevel {
-    O0 = 0,
-    O1 = 1,
-    O2 = 2,
-    O3 = 3,
-}
-
-impl Default for OptLevel {
-    #[inline]
-    fn default() -> Self {
-        Self::O2
-    }
-}
-
-impl OptLevel {
-    #[inline]
-    pub const fn at_least(self, other: OptLevel) -> bool {
-        self as u8 >= other as u8
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct SimplifyCtx {
