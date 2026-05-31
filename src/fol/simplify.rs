@@ -1362,9 +1362,7 @@ impl RewriteRule for EqAndConst {
         if xop.op != And {
             return None;
         }
-        let Some(yc) = y.try_bv_const() else {
-            return None;
-        };
+        let yc = y.try_bv_const()?;
 
         let mask = if let Some(mc) = xop[0].try_bv_const() {
             mc
@@ -2262,9 +2260,34 @@ impl RewriteRule for WriteSameValue {
     }
 }
 
+struct WriteConditionalSameValue;
+impl RewriteRule for WriteConditionalSameValue {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let (array, index, value) = (&terms[0], &terms[1], &terms[2]);
+        let vop = value.try_op()?;
+        if vop.op != Ite {
+            return None;
+        }
+
+        if is_same_read(&vop[1], array, index) {
+            return Some(vop[0].ite(array, Term::new_op(Write, [array, index, &vop[2]])));
+        }
+        if is_same_read(&vop[2], array, index) {
+            return Some(vop[0].ite(Term::new_op(Write, [array, index, &vop[1]]), array));
+        }
+
+        None
+    }
+}
+
 pub(crate) fn write_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     RewritePipeline::new(ctx.level)
         .with_rule(WriteSameValue)
+        .with_rule(WriteConditionalSameValue)
         .apply(terms)
 }
 

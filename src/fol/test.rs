@@ -457,7 +457,21 @@ fn test_simplify_array_same_index_patterns() {
     assert_eq!(
         c.ite(&conditional_write, &array)
             .simplify_with_ctx(&ctx, &mut map),
-        conditional_write
+        c.ite(Term::new_op(FolOp::Write, [&array, &index, &value]), &array)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        Term::new_op(FolOp::Write, [&array, &index, &c.ite(&value, &read)])
+            .simplify_with_ctx(&ctx, &mut map),
+        c.ite(Term::new_op(FolOp::Write, [&array, &index, &value]), &array)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        Term::new_op(FolOp::Write, [&array, &index, &c.ite(&read, &value)])
+            .simplify_with_ctx(&ctx, &mut map),
+        c.ite(&array, Term::new_op(FolOp::Write, [&array, &index, &value]))
     );
 }
 
