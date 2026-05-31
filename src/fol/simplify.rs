@@ -1426,10 +1426,66 @@ impl RewriteRule for UltConstY {
     }
 }
 
+struct UltConcatConst;
+impl RewriteRule for UltConcatConst {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+
+        // Case 1: ult(concat(zeros, x_sub), cst)
+        if let Some(xop) = x.try_op()
+            && xop.op == Concat
+            && let Some(xc_hi) = xop[0].try_bv_const()
+            && xc_hi.is_zero()
+            && let Some(yc) = y.try_bv_const()
+        {
+            let lo_len = xop[1].bv_len();
+            let hi_len = xop[0].bv_len();
+
+            let y_l = yc.slice(0..lo_len);
+            let y_h = yc.slice(lo_len..lo_len + hi_len);
+
+            if !y_h.is_zero() {
+                return Some(Term::bool_const(true));
+            } else {
+                return Some(xop[1].op1(Ult, Term::bv_const(y_l)));
+            }
+        }
+
+        // Case 2: ult(cst, concat(zeros, y_sub))
+        if let Some(yop) = y.try_op()
+            && yop.op == Concat
+            && let Some(yc_hi) = yop[0].try_bv_const()
+            && yc_hi.is_zero()
+            && let Some(xc) = x.try_bv_const()
+        {
+            let lo_len = yop[1].bv_len();
+            let hi_len = yop[0].bv_len();
+
+            let cst_lo = xc.slice(0..lo_len);
+
+            let cst_hi = xc.slice(lo_len..lo_len + hi_len);
+
+            if !cst_hi.is_zero() {
+                return Some(Term::bool_const(false));
+            } else {
+                return Some(Term::bv_const(cst_lo).op1(Ult, &yop[1]));
+            }
+        }
+
+        None
+    }
+}
+
 pub(crate) fn ult_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(UltConstX)
-        .with_rule(UltConstY);
+        .with_rule(UltConstY)
+        .with_rule(UltConcatConst);
     pipeline.apply(terms)
 }
 

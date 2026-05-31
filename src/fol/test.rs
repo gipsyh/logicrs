@@ -398,6 +398,34 @@ fn test_simplify_nonnegative_slt_bound() {
 }
 
 #[test]
+fn test_simplify_ult_zero_extended_lhs_const_bound() {
+    let ctx = SimplifyCtx::new(OptLevel::O1);
+    let x = Term::new_var(Sort::Bv(2));
+    let zx = Term::bv_const(BitVec::zero(4)).concat(&x);
+    let bound = Term::bv_const(BitVec::from("100000"));
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        zx.op1(FolOp::Ult, &bound).simplify_with_ctx(&ctx, &mut map),
+        Term::bool_const(true)
+    );
+}
+
+#[test]
+fn test_simplify_ult_const_zero_extended_rhs_bound() {
+    let ctx = SimplifyCtx::new(OptLevel::O1);
+    let y = Term::new_var(Sort::Bv(2));
+    let zy = Term::bv_const(BitVec::zero(4)).concat(&y);
+    let lhs = Term::bv_const(BitVec::from("100000"));
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        lhs.op1(FolOp::Ult, &zy).simplify_with_ctx(&ctx, &mut map),
+        Term::bool_const(false)
+    );
+}
+
+#[test]
 fn test_simplify_bool_mask_patterns() {
     let ctx = SimplifyCtx::new(OptLevel::O3);
     let c = Term::new_var(Sort::bool());
