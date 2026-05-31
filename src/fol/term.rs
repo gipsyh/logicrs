@@ -266,7 +266,7 @@ impl Term {
         r
     }
 
-    pub fn apply(&self, r: impl Fn(&Term) -> Option<Term>) -> Term {
+    pub fn apply(&self, r: &impl Fn(&Term) -> Option<Term>) -> Term {
         self.cached_apply(&r, &mut GHashMap::new())
     }
 
