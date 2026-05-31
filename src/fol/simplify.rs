@@ -116,6 +116,10 @@ fn fold_assoc_const_terms(op: FolOp, terms: &[Term]) -> TermResult {
         collect_assoc_terms(op, term, &mut leaves);
     }
 
+    if leaves.len() <= 2 {
+        return None;
+    }
+
     let mut const_terms = Vec::new();
     let mut other_terms = Vec::new();
     for leaf in leaves {
@@ -135,6 +139,7 @@ fn fold_assoc_const_terms(op: FolOp, terms: &[Term]) -> TermResult {
         .reduce(|acc, term| eval_const_op(op, &[acc, term]))
         .unwrap();
     other_terms.push(folded_const);
+    other_terms.sort_by_key(|t| t.id());
 
     Some(Term::new_op_fold(op, other_terms))
 }
