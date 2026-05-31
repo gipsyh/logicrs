@@ -193,6 +193,11 @@ impl Term {
     }
 
     #[inline]
+    pub fn sign_bit(&self) -> Term {
+        self.slice(self.bv_len() - 1, self.bv_len() - 1)
+    }
+
+    #[inline]
     pub fn concat(&self, o: impl AsRef<Term>) -> Term {
         self.op1(Concat, o)
     }

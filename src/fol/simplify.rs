@@ -1893,7 +1893,7 @@ impl RewriteRule for SliceOfSext {
             return Some(base.slice(l, h));
         }
         if l >= base.bv_len() {
-            let sign = base.slice(base.bv_len() - 1, base.bv_len() - 1);
+            let sign = base.sign_bit();
             return Some(Term::new_op(
                 Sext,
                 [sign, Term::bv_const(BitVec::zero(h - l))],
