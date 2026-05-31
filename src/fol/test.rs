@@ -166,6 +166,27 @@ fn test_simplify_xor_identities() {
 }
 
 #[test]
+fn test_simplify_associative_constants() {
+    let x = Term::new_var(Sort::Bv(4));
+    let c3 = Term::bv_const(BitVec::from("0011"));
+    let c5 = Term::bv_const(BitVec::from("0101"));
+    let c6 = Term::bv_const(BitVec::from("0110"));
+    let c8 = Term::bv_const(BitVec::from("1000"));
+
+    let mut map = GHashMap::new();
+    assert_eq!(((&x + &c3) + &c5).simplify(&mut map), &x + &c8);
+
+    let mut map = GHashMap::new();
+    assert_eq!(((&x ^ &c3) ^ &c5).simplify(&mut map), &x ^ &c6);
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        ((&x & &c3) & &c5).simplify(&mut map),
+        &x & &Term::bv_const(BitVec::from("0001"))
+    );
+}
+
+#[test]
 fn test_simplify_not_not() {
     let x = Term::new_var(Sort::Bv(1));
     let expr = !!&x;

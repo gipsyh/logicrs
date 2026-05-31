@@ -96,6 +96,49 @@ fn collect_assoc_terms(op: FolOp, term: &Term, out: &mut Vec<Term>) {
     out.push(term.clone());
 }
 
+fn eval_const_op(op: FolOp, terms: &[Term]) -> Term {
+    let vals: Vec<Value> = terms
+        .iter()
+        .map(|t| Value::Bv(t.try_bv_const().unwrap().clone().into()))
+        .collect();
+    let result = op.simulate(&vals);
+    let lbv = result.into_bv().unwrap();
+    Term::bv_const(BitVec::from(lbv))
+}
+
+fn fold_assoc_const_terms(op: FolOp, terms: &[Term]) -> TermResult {
+    if !op.traits().contains(OpTrait::Associative) {
+        return None;
+    }
+
+    let mut leaves = Vec::new();
+    for term in terms {
+        collect_assoc_terms(op, term, &mut leaves);
+    }
+
+    let mut const_terms = Vec::new();
+    let mut other_terms = Vec::new();
+    for leaf in leaves {
+        if leaf.is_const() {
+            const_terms.push(leaf);
+        } else {
+            other_terms.push(leaf);
+        }
+    }
+
+    if const_terms.len() <= 1 {
+        return None;
+    }
+
+    let folded_const = const_terms
+        .into_iter()
+        .reduce(|acc, term| eval_const_op(op, &[acc, term]))
+        .unwrap();
+    other_terms.push(folded_const);
+
+    Some(Term::new_op_fold(op, other_terms))
+}
+
 fn slice_bit_literal(term: &Term) -> Option<(Term, usize, bool)> {
     let (inner, positive) = if let Some(top) = term.try_op()
         && top.op == Not
@@ -2167,13 +2210,13 @@ impl FolOp {
     pub fn simplify(self, ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         // Constant propagation
         if terms.iter().all(|t| t.is_const()) {
-            let vals: Vec<Value> = terms
-                .iter()
-                .map(|t| Value::Bv(t.try_bv_const().unwrap().clone().into()))
-                .collect();
-            let result = self.simulate(&vals);
-            let lbv = result.into_bv().unwrap();
-            return Some(Term::bv_const(BitVec::from(lbv)));
+            return Some(eval_const_op(self, terms));
+        }
+
+        if ctx.level.at_least(OptLevel::O1) {
+            if let Some(res) = fold_assoc_const_terms(self, terms) {
+                return Some(res);
+            }
         }
 
         // Idempotent: op(a, a) = a

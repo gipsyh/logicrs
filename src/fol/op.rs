@@ -8,9 +8,13 @@ use std::fmt::{self, Display};
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum OpTrait {
+    /// Commutative: `a op b == b op a`.
     Commutative = 1 << 0,
+    /// Associative: `(a op b) op c == a op (b op c)`.
     Associative = 1 << 1,
+    /// Idempotent: `a op a == a`.
     Idempotent = 1 << 2,
+    /// Involutive: applying the operation twice returns the original value.
     Involutive = 1 << 3,
 }
 
