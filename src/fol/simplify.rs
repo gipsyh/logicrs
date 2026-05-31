@@ -2163,63 +2163,63 @@ pub(crate) fn write_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .apply(terms)
 }
 
-fn op_simplify(ctx: &SimplifyCtx, op: FolOp, terms: &[Term]) -> TermResult {
-    // Constant propagation
-    if terms.iter().all(|t| t.is_const()) {
-        let vals: Vec<Value> = terms
-            .iter()
-            .map(|t| Value::Bv(t.try_bv_const().unwrap().clone().into()))
-            .collect();
-        let result = op.simulate(&vals);
-        let lbv = result.into_bv().unwrap();
-        return Some(Term::bv_const(BitVec::from(lbv)));
-    }
-
-    // Idempotent: op(a, a) = a
-    if op.traits().contains(OpTrait::Idempotent) && terms[0] == terms[1] {
-        return Some(terms[0].clone());
-    }
-
-    // Involutive: op(op(a)) = a
-    if op.traits().contains(OpTrait::Involutive)
-        && let Some(inner_op) = terms[0].try_op()
-        && inner_op.op == op
-    {
-        return Some(inner_op.terms[0].clone());
-    }
-
-    op.simplify(ctx, terms).or_else(|| {
-        if op.traits().contains(OpTrait::Commutative) {
-            debug_assert!(terms.len() == 2);
-            op.simplify(ctx, &[terms[1].clone(), terms[0].clone()])
-        } else {
-            None
+impl FolOp {
+    pub fn simplify(self, ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+        // Constant propagation
+        if terms.iter().all(|t| t.is_const()) {
+            let vals: Vec<Value> = terms
+                .iter()
+                .map(|t| Value::Bv(t.try_bv_const().unwrap().clone().into()))
+                .collect();
+            let result = self.simulate(&vals);
+            let lbv = result.into_bv().unwrap();
+            return Some(Term::bv_const(BitVec::from(lbv)));
         }
-    })
+
+        // Idempotent: op(a, a) = a
+        if self.traits().contains(OpTrait::Idempotent) && terms[0] == terms[1] {
+            return Some(terms[0].clone());
+        }
+
+        // Involutive: op(op(a)) = a
+        if self.traits().contains(OpTrait::Involutive)
+            && let Some(inner_op) = terms[0].try_op()
+            && inner_op.op == self
+        {
+            return Some(inner_op.terms[0].clone());
+        }
+
+        op_simplify(self, ctx, terms).or_else(|| {
+            if self.traits().contains(OpTrait::Commutative) {
+                debug_assert!(terms.len() == 2);
+                op_simplify(self, ctx, &[terms[1].clone(), terms[0].clone()])
+            } else {
+                None
+            }
+        })
+    }
 }
 
-impl FolOp {
-    pub fn simplify(&self, ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
-        match self {
-            FolOp::Not => not_simplify(ctx, terms),
-            FolOp::And => and_simplify(ctx, terms),
-            FolOp::Or => or_simplify(ctx, terms),
-            FolOp::Xor => xor_simplify(ctx, terms),
-            FolOp::Eq => eq_simplify(ctx, terms),
-            FolOp::Ult => ult_simplify(ctx, terms),
-            FolOp::Slt => slt_simplify(ctx, terms),
-            FolOp::Ite => ite_simplify(ctx, terms),
-            FolOp::Concat => concat_simplify(ctx, terms),
-            FolOp::Sext => sext_simplify(ctx, terms),
-            FolOp::Slice => slice_simplify(ctx, terms),
-            FolOp::Add => add_simplify(ctx, terms),
-            FolOp::Neg => neg_simplify(ctx, terms),
-            FolOp::Mul => mul_simplify(ctx, terms),
-            FolOp::Udiv => udiv_simplify(ctx, terms),
-            FolOp::Read => read_simplify(ctx, terms),
-            FolOp::Write => write_simplify(ctx, terms),
-            _ => None,
-        }
+fn op_simplify(op: FolOp, ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    match op {
+        FolOp::Not => not_simplify(ctx, terms),
+        FolOp::And => and_simplify(ctx, terms),
+        FolOp::Or => or_simplify(ctx, terms),
+        FolOp::Xor => xor_simplify(ctx, terms),
+        FolOp::Eq => eq_simplify(ctx, terms),
+        FolOp::Ult => ult_simplify(ctx, terms),
+        FolOp::Slt => slt_simplify(ctx, terms),
+        FolOp::Ite => ite_simplify(ctx, terms),
+        FolOp::Concat => concat_simplify(ctx, terms),
+        FolOp::Sext => sext_simplify(ctx, terms),
+        FolOp::Slice => slice_simplify(ctx, terms),
+        FolOp::Add => add_simplify(ctx, terms),
+        FolOp::Neg => neg_simplify(ctx, terms),
+        FolOp::Mul => mul_simplify(ctx, terms),
+        FolOp::Udiv => udiv_simplify(ctx, terms),
+        FolOp::Read => read_simplify(ctx, terms),
+        FolOp::Write => write_simplify(ctx, terms),
+        _ => None,
     }
 }
 
@@ -2238,7 +2238,7 @@ impl Term {
                 .iter()
                 .map(|s| s.simplify_with_ctx(ctx, map))
                 .collect();
-            if let Some(res) = op_simplify(ctx, op_term.op, &terms) {
+            if let Some(res) = op_term.op.simplify(ctx, &terms) {
                 res.simplify_with_ctx(ctx, map)
             } else {
                 Term::new_op(op_term.op, terms)

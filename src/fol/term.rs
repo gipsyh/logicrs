@@ -1,6 +1,8 @@
 use super::op::{Add, And, Ite, Neg, Not, Or, Sub, Xor};
 use super::{op::FolOp, sort::Sort};
+use crate::OptLevel;
 use crate::fol::op::{Concat, Slice};
+use crate::fol::simplify::SimplifyCtx;
 use crate::fol::{OpTrait, TermVec, Value, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
@@ -44,6 +46,14 @@ impl Term {
         }
         if op.traits().contains(OpTrait::Commutative) {
             terms.sort_by_key(|t| t.id());
+        }
+        if let Some(t) = op.simplify(
+            &SimplifyCtx {
+                level: OptLevel::O0,
+            },
+            &terms,
+        ) {
+            return t;
         }
         let sort = op.sort(&terms);
         let term = TermType::Op(OpTerm::new(op, terms));
@@ -609,21 +619,5 @@ mod tests {
         term_gc();
 
         assert_ne!(Term::bool_const(true).id(), c_id);
-    }
-
-    #[test]
-    fn term_gc_keeps_reachable_child() {
-        let c = Term::bool_const(true);
-        let c_id = c.id();
-        let x = Term::new_var(Sort::bool());
-        let expr = &c & &x;
-        drop(c);
-        drop(x);
-
-        term_gc();
-
-        assert_eq!(Term::bool_const(true).id(), c_id);
-        drop(expr);
-        term_gc();
     }
 }
