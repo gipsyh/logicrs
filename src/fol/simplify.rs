@@ -280,6 +280,10 @@ fn or_eq_term_consts_one_bit_diff(x: &Term, c1: &BitVec, c2: &BitVec) -> Option<
 
 struct NotBoolXorEqSwap;
 impl RewriteRule for NotBoolXorEqSwap {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         if !x.is_bool() {
@@ -1412,6 +1416,10 @@ impl RewriteRule for SltConstY {
 
 struct SltNonnegativeBound;
 impl RewriteRule for SltNonnegativeBound {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let y = &terms[1];
@@ -1795,6 +1803,10 @@ impl RewriteRule for SextBoolToIte {
 
 struct SextMergeNested;
 impl RewriteRule for SextMergeNested {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let ext = terms[1].bv_len();
@@ -1852,6 +1864,10 @@ impl RewriteRule for SliceOfSlice {
 
 struct SliceOfConcat;
 impl RewriteRule for SliceOfConcat {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let s = &terms[0];
         let l = terms[2].bv_len();
@@ -1879,6 +1895,10 @@ impl RewriteRule for SliceOfConcat {
 
 struct SliceOfSext;
 impl RewriteRule for SliceOfSext {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O0
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let s = &terms[0];
         let l = terms[2].bv_len();
