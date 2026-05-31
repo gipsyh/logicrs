@@ -194,6 +194,60 @@ fn test_simplify_not_not() {
     assert_eq!(expr.simplify(&mut map), x);
 }
 
+#[test]
+fn test_simplify_ite_same_nested_condition() {
+    let ctx = SimplifyCtx::new(OptLevel::O3);
+    let c = Term::new_var(Sort::bool());
+    let x = Term::new_var(Sort::Bv(8));
+    let y = Term::new_var(Sort::Bv(8));
+    let z = Term::new_var(Sort::Bv(8));
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        c.ite(c.ite(&x, &y), &z).simplify_with_ctx(&ctx, &mut map),
+        c.ite(&x, &z)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        c.ite(&x, c.ite(&y, &z)).simplify_with_ctx(&ctx, &mut map),
+        c.ite(&x, &z)
+    );
+}
+
+#[test]
+fn test_simplify_ite_nested_shared_branch() {
+    let ctx = SimplifyCtx::new(OptLevel::O3);
+    let c = Term::new_var(Sort::bool());
+    let d = Term::new_var(Sort::bool());
+    let x = Term::new_var(Sort::Bv(8));
+    let y = Term::new_var(Sort::Bv(8));
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        c.ite(d.ite(&x, &y), &y).simplify_with_ctx(&ctx, &mut map),
+        (&c & &d).ite(&x, &y)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        c.ite(d.ite(&y, &x), &y).simplify_with_ctx(&ctx, &mut map),
+        (&c & !&d).ite(&x, &y)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        c.ite(&x, d.ite(&x, &y)).simplify_with_ctx(&ctx, &mut map),
+        (&c | &d).ite(&x, &y)
+    );
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        c.ite(&x, d.ite(&y, &x)).simplify_with_ctx(&ctx, &mut map),
+        (&c | !&d).ite(&x, &y)
+    );
+}
+
 fn signed_min(width: usize) -> Term {
     let mut c = BitVec::zero(width);
     c.set(width - 1, true);

@@ -1602,23 +1602,48 @@ impl RewriteRule for IteSameCondNested {
             && top.op == Ite
             && top[0] == *c
         {
-            if top[2] == *e {
-                return Some(t.clone());
-            }
-            if top[1] == *e {
-                return Some(e.clone());
-            }
+            return Some(c.ite(&top[1], e));
         }
 
         if let Some(eop) = e.try_op()
             && eop.op == Ite
             && eop[0] == *c
         {
+            return Some(c.ite(t, &eop[2]));
+        }
+
+        None
+    }
+}
+
+struct IteNestedSharedBranch;
+impl RewriteRule for IteNestedSharedBranch {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
+
+        if let Some(top) = t.try_op()
+            && top.op == Ite
+        {
+            if top[2] == *e {
+                return Some((c & &top[0]).ite(&top[1], e));
+            }
+            if top[1] == *e {
+                return Some((c & !&top[0]).ite(&top[2], e));
+            }
+        }
+
+        if let Some(eop) = e.try_op()
+            && eop.op == Ite
+        {
             if eop[1] == *t {
-                return Some(e.clone());
+                return Some((c | &eop[0]).ite(t, &eop[2]));
             }
             if eop[2] == *t {
-                return Some(t.clone());
+                return Some((c | !&eop[0]).ite(t, &eop[1]));
             }
         }
 
@@ -1687,6 +1712,7 @@ pub(crate) fn ite_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(IteBoolComplementBranches)
         .with_rule(IteBoolBranchConst)
         .with_rule(IteSameCondNested)
+        .with_rule(IteNestedSharedBranch)
         .with_rule(IteWriteBranches);
     pipeline.apply(terms)
 }
@@ -2218,10 +2244,10 @@ impl FolOp {
             return Some(eval_const_op(self, terms));
         }
 
-        if ctx.level.at_least(OptLevel::O1) {
-            if let Some(res) = fold_assoc_const_terms(self, terms) {
-                return Some(res);
-            }
+        if ctx.level.at_least(OptLevel::O1)
+            && let Some(res) = fold_assoc_const_terms(self, terms)
+        {
+            return Some(res);
         }
 
         // Idempotent: op(a, a) = a
