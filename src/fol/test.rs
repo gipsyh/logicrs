@@ -551,3 +551,28 @@ fn test_slt_simulate() {
     val.insert(y.clone(), bv_val("00001010")); // 10
     assert_bv_eq(&slt.simulate(&mut val), "1");
 }
+
+#[test]
+fn test_simplify_eq_and_const_contradiction() {
+    let ctx = SimplifyCtx::new(OptLevel::O1);
+    let x = Term::new_var(Sort::Bv(7));
+
+    // Eq(And(x, 1110111), 1100111) -> satisfiable, not simplified to false
+    let c1 = Term::bv_const(BitVec::from("1110111"));
+    let c2 = Term::bv_const(BitVec::from("1100111"));
+    let eq_satisfiable = (&x & &c1).op1(FolOp::Eq, &c2);
+    let mut map = GHashMap::new();
+    assert_ne!(
+        eq_satisfiable.simplify_with_ctx(&ctx, &mut map),
+        Term::bool_const(false)
+    );
+
+    // Eq(And(x, 1110111), 1111111) -> contradiction (bit 3 of mask is 0, but bit 3 of target is 1)
+    let c3 = Term::bv_const(BitVec::from("1111111"));
+    let eq_contradiction = (&x & &c1).op1(FolOp::Eq, &c3);
+    let mut map = GHashMap::new();
+    assert_eq!(
+        eq_contradiction.simplify_with_ctx(&ctx, &mut map),
+        Term::bool_const(false)
+    );
+}

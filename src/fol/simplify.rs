@@ -1352,6 +1352,36 @@ impl RewriteRule for EqXorZero {
     }
 }
 
+struct EqAndConst;
+impl RewriteRule for EqAndConst {
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let x = &terms[0];
+        let y = &terms[1];
+
+        let xop = x.try_op()?;
+        if xop.op != And {
+            return None;
+        }
+        let Some(yc) = y.try_bv_const() else {
+            return None;
+        };
+
+        let mask = if let Some(mc) = xop[0].try_bv_const() {
+            mc
+        } else {
+            xop[1].try_bv_const()?
+        };
+
+        for (idx, bit) in yc.iter().enumerate() {
+            if bit && !mask.get(idx) {
+                return Some(Term::bool_const(false));
+            }
+        }
+
+        None
+    }
+}
+
 pub(crate) fn eq_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
     let pipeline = RewritePipeline::new(ctx.level)
         .with_rule(EqBoolViaXor)
@@ -1359,7 +1389,8 @@ pub(crate) fn eq_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(EqComplement)
         .with_rule(EqBoolMaskConst)
         .with_rule(EqNotConst)
-        .with_rule(EqXorZero);
+        .with_rule(EqXorZero)
+        .with_rule(EqAndConst);
     pipeline.apply(terms)
 }
 
