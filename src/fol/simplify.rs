@@ -1562,6 +1562,23 @@ impl RewriteRule for IteNotCondSwap {
     }
 }
 
+struct IteNotBranches;
+impl RewriteRule for IteNotBranches {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let (c, t, e) = (&terms[0], &terms[1], &terms[2]);
+        let top = t.try_op()?;
+        let eop = e.try_op()?;
+        if top.op == eop.op && (top.op == Not || top.op == Neg) {
+            return Some(c.ite(&top[0], &eop[0]).op0(top.op));
+        }
+        None
+    }
+}
+
 struct IteBoolComplementBranches;
 impl RewriteRule for IteBoolComplementBranches {
     fn opt_level(&self) -> OptLevel {
@@ -1738,6 +1755,7 @@ pub(crate) fn ite_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(IteConstCond)
         .with_rule(IteSameBranches)
         .with_rule(IteNotCondSwap)
+        .with_rule(IteNotBranches)
         .with_rule(IteBoolComplementBranches)
         .with_rule(IteBoolBranchConst)
         .with_rule(IteSameCondNested)

@@ -216,6 +216,20 @@ fn test_simplify_ite_same_nested_condition() {
 }
 
 #[test]
+fn test_simplify_ite_not_branches() {
+    let ctx = SimplifyCtx::new(OptLevel::O3);
+    let c = Term::new_var(Sort::bool());
+    let x = Term::new_var(Sort::Bv(8));
+    let y = Term::new_var(Sort::Bv(8));
+
+    let mut map = GHashMap::new();
+    assert_eq!(
+        c.ite(!&x, !&y).simplify_with_ctx(&ctx, &mut map),
+        !c.ite(&x, &y)
+    );
+}
+
+#[test]
 fn test_simplify_ite_nested_shared_branch() {
     let ctx = SimplifyCtx::new(OptLevel::O3);
     let c = Term::new_var(Sort::bool());
