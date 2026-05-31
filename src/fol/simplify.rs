@@ -1951,8 +1951,26 @@ impl RewriteRule for SliceOfBitwiseOp {
     }
 }
 
-struct SliceLsbOfAddSub;
-impl RewriteRule for SliceLsbOfAddSub {
+struct SliceOfNeg;
+impl RewriteRule for SliceOfNeg {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
+    fn apply(&self, terms: &[Term]) -> TermResult {
+        let s = &terms[0];
+        let l = terms[2].bv_len();
+        let h = terms[1].bv_len();
+        let sop = s.try_op()?;
+        match sop.op {
+            Neg => Some(sop[0].slice(l, h).op0(Neg)),
+            _ => None,
+        }
+    }
+}
+
+struct SliceLsbOfAdd;
+impl RewriteRule for SliceLsbOfAdd {
     fn opt_level(&self) -> OptLevel {
         OptLevel::O1
     }
@@ -1965,7 +1983,7 @@ impl RewriteRule for SliceLsbOfAddSub {
             return None;
         }
         let sop = s.try_op()?;
-        if sop.op != Add && sop.op != Sub {
+        if sop.op != Add {
             return None;
         }
         Some(sop[0].slice(0, 0) ^ sop[1].slice(0, 0))
@@ -2002,7 +2020,8 @@ pub(crate) fn slice_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .with_rule(SliceOfSext)
         .with_rule(SliceOfIte)
         .with_rule(SliceOfBitwiseOp)
-        .with_rule(SliceLsbOfAddSub)
+        .with_rule(SliceOfNeg)
+        .with_rule(SliceLsbOfAdd)
         .with_rule(SliceLsbOfSll);
     pipeline.apply(terms)
 }
@@ -2026,35 +2045,21 @@ pub(crate) fn add_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         .apply(terms)
 }
 
-struct SubByZero;
-impl RewriteRule for SubByZero {
+struct NegBool;
+impl RewriteRule for NegBool {
     fn apply(&self, terms: &[Term]) -> TermResult {
-        let (x, y) = (&terms[0], &terms[1]);
-        let yc = y.try_bv_const()?;
-        if yc.is_zero() {
-            return Some(x.clone());
+        let x = &terms[0];
+        if x.is_bool() {
+            return TermResult::Some(x.clone());
         }
         None
     }
 }
 
-struct SubBv1MinusOne;
-impl RewriteRule for SubBv1MinusOne {
-    fn apply(&self, terms: &[Term]) -> TermResult {
-        let (x, y) = (&terms[0], &terms[1]);
-        let yc = y.try_bv_const()?;
-        if x.bv_len() == 1 && yc.is_one() {
-            return Some(!x.clone());
-        }
-        None
-    }
-}
-
-pub(crate) fn sub_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
-    let pipeline = RewritePipeline::new(ctx.level)
-        .with_rule(SubByZero)
-        .with_rule(SubBv1MinusOne);
-    pipeline.apply(terms)
+pub(crate) fn neg_simplify(ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
+    RewritePipeline::new(ctx.level)
+        .with_rule(NegBool)
+        .apply(terms)
 }
 
 struct MulByZero;
@@ -2188,7 +2193,7 @@ impl FolOp {
             FolOp::Sext => sext_simplify(ctx, terms),
             FolOp::Slice => slice_simplify(ctx, terms),
             FolOp::Add => add_simplify(ctx, terms),
-            FolOp::Sub => sub_simplify(ctx, terms),
+            FolOp::Neg => neg_simplify(ctx, terms),
             FolOp::Mul => mul_simplify(ctx, terms),
             FolOp::Udiv => udiv_simplify(ctx, terms),
             FolOp::Read => read_simplify(ctx, terms),

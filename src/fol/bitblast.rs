@@ -338,17 +338,6 @@ pub(crate) fn add_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-pub(crate) fn sub_bitblast(terms: &[TermVec]) -> TermVec {
-    let mut r;
-    let mut c = Term::bool_const(true);
-    let mut res = TermVec::new();
-    for (x, y) in terms[0].iter().zip(terms[1].iter()) {
-        (r, c) = full_adder(x, &!y, &c);
-        res.push(r);
-    }
-    res
-}
-
 pub(crate) fn mul_bitblast(terms: &[TermVec]) -> TermVec {
     let x = &terms[0];
     let y = &terms[1];
@@ -608,7 +597,6 @@ impl FolOp {
             FolOp::Slice => slice_bitblast(terms),
             FolOp::Redxor => redxor_bitblast(terms),
             FolOp::Add => add_bitblast(terms),
-            FolOp::Sub => sub_bitblast(terms),
             FolOp::Mul => mul_bitblast(terms),
             FolOp::Udiv => udiv_bitblast(terms),
             FolOp::Urem => urem_bitblast(terms),

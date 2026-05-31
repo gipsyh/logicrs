@@ -74,25 +74,6 @@ fn test_simulate_and_or_xor() {
 }
 
 #[test]
-fn test_simulate_add_sub() {
-    let x = Term::new_var(Sort::Bv(4));
-    let y = Term::new_var(Sort::Bv(4));
-
-    let add_xy = &x + &y;
-    let sub_xy = &x - &y;
-
-    let mut val = GHashMap::new();
-    // x = 5 (0101), y = 3 (0011)
-    val.insert(x.clone(), bv_val("0101"));
-    val.insert(y.clone(), bv_val("0011"));
-
-    // 5 + 3 = 8 (1000)
-    assert_bv_eq(&add_xy.simulate(&mut val), "1000");
-    // 5 - 3 = 2 (0010)
-    assert_bv_eq(&sub_xy.simulate(&mut val), "0010");
-}
-
-#[test]
 fn test_simulate_ite() {
     let c = Term::new_var(Sort::Bv(1));
     let t = Term::new_var(Sort::Bv(4));

@@ -368,19 +368,6 @@ pub fn add_simulate(terms: &[Value]) -> Value {
     Value::Bv(res)
 }
 
-pub fn sub_simulate(terms: &[Value]) -> Value {
-    let x = terms[0].as_bv().unwrap();
-    let y = terms[1].as_bv().unwrap();
-    let mut res = LboolVec::from_elem(Lbool::NONE, x.len());
-    let mut c = Lbool::TRUE;
-    for i in 0..x.len() {
-        let (r, nc) = full_adder_sim(x.get(i), !y.get(i), c);
-        res.set(i, r);
-        c = nc;
-    }
-    Value::Bv(res)
-}
-
 pub fn mul_simulate(terms: &[Value]) -> Value {
     let x = terms[0].as_bv().unwrap();
     let y = terms[1].as_bv().unwrap();
@@ -747,7 +734,6 @@ impl FolOp {
             FolOp::Slice => slice_simulate(vals),
             FolOp::Redxor => redxor_simulate(vals),
             FolOp::Add => add_simulate(vals),
-            FolOp::Sub => sub_simulate(vals),
             FolOp::Mul => mul_simulate(vals),
             FolOp::Udiv => udiv_simulate(vals),
             FolOp::Urem => urem_simulate(vals),
@@ -1052,20 +1038,6 @@ mod tests {
         assert_bv_eq(&add_simulate(&[bv("1111"), bv("0001")]), "0000");
         // 7 + 7 = 14
         assert_bv_eq(&add_simulate(&[bv("0111"), bv("0111")]), "1110");
-    }
-
-    #[test]
-    fn test_sub_simulate() {
-        // 0 - 0 = 0
-        assert_bv_eq(&sub_simulate(&[bv("0000"), bv("0000")]), "0000");
-        // 2 - 1 = 1
-        assert_bv_eq(&sub_simulate(&[bv("0010"), bv("0001")]), "0001");
-        // 5 - 3 = 2
-        assert_bv_eq(&sub_simulate(&[bv("0101"), bv("0011")]), "0010");
-        // 0 - 1 = 15 (underflow, wrap around)
-        assert_bv_eq(&sub_simulate(&[bv("0000"), bv("0001")]), "1111");
-        // 8 - 8 = 0
-        assert_bv_eq(&sub_simulate(&[bv("1000"), bv("1000")]), "0000");
     }
 
     #[test]

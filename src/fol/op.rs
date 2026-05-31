@@ -101,7 +101,6 @@ impl FolOp {
                 | FolOp::Slice
                 | FolOp::Redxor
                 | FolOp::Add
-                | FolOp::Sub
                 | FolOp::Mul
                 | FolOp::Udiv
                 | FolOp::Urem
@@ -223,6 +222,7 @@ impl FolOp {
                 let zero = terms[0].mk_bv_const_zero();
                 !terms[0].op1(Eq, &zero)
             }
+            FolOp::Sub => terms[0].op1(Add, terms[1].op0(Neg)),
             FolOp::Udivo => {
                 let zero = terms[1].mk_bv_const_zero();
                 !terms[1].op1(Eq, &zero)
