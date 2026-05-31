@@ -1354,6 +1354,10 @@ impl RewriteRule for EqXorZero {
 
 struct EqAndConst;
 impl RewriteRule for EqAndConst {
+    fn opt_level(&self) -> OptLevel {
+        OptLevel::O1
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult {
         let x = &terms[0];
         let y = &terms[1];
