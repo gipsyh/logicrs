@@ -4,9 +4,10 @@ use crate::{
 };
 use enum_as_inner::EnumAsInner;
 use giputils::hash::GHashMap;
+use serde::{Deserialize, Serialize};
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ArrayValue {
     value: GHashMap<usize, LboolVec>,
     sort: Sort,
@@ -43,7 +44,7 @@ impl ArrayValue {
     }
 }
 
-#[derive(Clone, Debug, EnumAsInner)]
+#[derive(Clone, Debug, EnumAsInner, Serialize, Deserialize)]
 pub enum Value {
     Bv(LboolVec),
     Array(ArrayValue),

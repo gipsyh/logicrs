@@ -1,4 +1,5 @@
 use giputils::bitvec::BitVec;
+use serde::{Deserialize, Serialize};
 use std::{
     fmt::{self, Debug, Display, Write},
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not},
@@ -129,7 +130,7 @@ impl BitXor for Lbool {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct LboolVec {
     v: BitVec,
     m: BitVec,

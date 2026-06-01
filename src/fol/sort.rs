@@ -1,7 +1,8 @@
 use enum_as_inner::EnumAsInner;
+use serde::{Deserialize, Serialize};
 use std::fmt::{self, Debug};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, EnumAsInner)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, EnumAsInner, Serialize, Deserialize)]
 pub enum Sort {
     /// Bit-vector sort with the given bit width.
     Bv(usize),
