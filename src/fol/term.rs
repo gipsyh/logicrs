@@ -3,7 +3,7 @@ use super::{op::FolOp, sort::Sort};
 use crate::OptLevel;
 use crate::fol::op::{Concat, Slice};
 use crate::fol::simplify::SimplifyCtx;
-use crate::fol::{OpTrait, TermVec, Value, current_term_mgr, op};
+use crate::fol::{OpTrait, TermVec, Value, op, term_mgr};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::GHashMap;
@@ -27,13 +27,13 @@ impl Term {
 
     #[inline]
     pub fn bool_const(c: bool) -> Term {
-        current_term_mgr().new_term(TermType::Const(BitVec::from(&[c])), Sort::Bv(1))
+        term_mgr().new_term(TermType::Const(BitVec::from(&[c])), Sort::Bv(1))
     }
 
     #[inline]
     pub fn bv_const(c: BitVec) -> Term {
         let sort = Sort::Bv(c.len());
-        current_term_mgr().new_term(TermType::Const(c), sort)
+        term_mgr().new_term(TermType::Const(c), sort)
     }
 
     #[inline]
@@ -56,12 +56,12 @@ impl Term {
         }
         let sort = op.sort(&terms);
         let term = TermType::Op(OpTerm::new(op, terms));
-        current_term_mgr().new_term(term, sort)
+        term_mgr().new_term(term, sort)
     }
 
     #[inline]
     pub fn new_var(sort: Sort) -> Term {
-        current_term_mgr().new_var(sort)
+        term_mgr().new_var(sort)
     }
 
     #[inline]
@@ -326,7 +326,7 @@ impl<'de> Deserialize<'de> for Term {
         D: Deserializer<'de>,
     {
         let id = usize::deserialize(deserializer)?;
-        current_term_mgr()
+        term_mgr()
             .get_term_by_id(id)
             .ok_or_else(|| de::Error::custom(format!("unknown term id {id}")))
     }

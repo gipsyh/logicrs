@@ -158,17 +158,17 @@ thread_local! {
 }
 
 #[inline]
-pub fn current_term_mgr() -> &'static mut TermManager {
+pub fn term_mgr() -> &'static mut TermManager {
     TERM_MANAGER.with(|m| unsafe { &mut *m.get() })
 }
 
 /// Set global TermManager
 pub fn set_term_mgr(manager: TermManager) {
-    *current_term_mgr() = manager;
+    *term_mgr() = manager;
 }
 
 pub fn term_gc() {
-    current_term_mgr().garbage_collect();
+    term_mgr().garbage_collect();
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -302,7 +302,7 @@ mod tests {
         let expr = &x + &y;
         let expr_id = expr.id();
 
-        let snapshot = current_term_mgr().to_snapshot();
+        let snapshot = term_mgr().to_snapshot();
         let manager = TermManager::from_snapshot(snapshot);
 
         drop(expr);
@@ -310,8 +310,8 @@ mod tests {
         drop(x);
         set_term_mgr(manager);
 
-        current_term_mgr().enable_id_map();
-        let expr = current_term_mgr().get_term_by_id(expr_id).unwrap();
+        term_mgr().enable_id_map();
+        let expr = term_mgr().get_term_by_id(expr_id).unwrap();
         assert_eq!(expr.id(), expr_id);
 
         let z = Term::new_var(Sort::Bv(4));
@@ -320,10 +320,10 @@ mod tests {
 
     #[test]
     fn optional_id_map_tracks_new_terms() {
-        current_term_mgr().enable_id_map();
+        term_mgr().enable_id_map();
         let x = Term::new_var(Sort::bool());
-        assert_eq!(current_term_mgr().get_term_by_id(x.id()).unwrap(), x);
-        current_term_mgr().disable_id_map();
+        assert_eq!(term_mgr().get_term_by_id(x.id()).unwrap(), x);
+        term_mgr().disable_id_map();
     }
 
     #[test]
