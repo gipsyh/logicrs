@@ -67,7 +67,7 @@ impl Value {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BvTermValue {
     t: Term,
     v: LboolVec,
@@ -134,7 +134,7 @@ impl ArrayTermValue {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TermValue {
     t: Term,
     v: Value,
