@@ -7,6 +7,7 @@ use crate::fol::{OpTrait, TermVec, Value, current_term_mgr, op};
 use giputils::bitvec::BitVec;
 use giputils::grc::Grc;
 use giputils::hash::GHashMap;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::fmt::{self, Debug};
 use std::hash;
 use std::iter::once;
@@ -306,6 +307,28 @@ impl Debug for Term {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.inner.deref().fmt(f)
+    }
+}
+
+impl Serialize for Term {
+    #[inline]
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.id().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Term {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let id = usize::deserialize(deserializer)?;
+        current_term_mgr()
+            .get_term_by_id(id)
+            .ok_or_else(|| de::Error::custom(format!("unknown term id {id}")))
     }
 }
 

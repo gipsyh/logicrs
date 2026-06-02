@@ -10,9 +10,10 @@ use std::{cell::UnsafeCell, ops::Deref};
 
 #[derive(Default, Clone)]
 pub struct TermManager {
-    pub(super) avl_vid: usize,
-    pub(super) avl_tid: usize,
-    pub(super) map: GHashMap<TermType, Term>,
+    avl_vid: usize,
+    avl_tid: usize,
+    map: GHashMap<TermType, Term>,
+    id2term: Option<GHashMap<usize, Term>>,
 }
 
 impl TermManager {
@@ -22,6 +23,7 @@ impl TermManager {
             avl_vid: 0,
             avl_tid: 0,
             map: GHashMap::new(),
+            id2term: None,
         }
     }
 
@@ -40,6 +42,9 @@ impl TermManager {
                     }),
                 };
                 self.map.insert(ty, term.clone());
+                if let Some(id2term) = &mut self.id2term {
+                    id2term.insert(id, term.clone());
+                }
                 term
             }
         }
@@ -64,11 +69,25 @@ impl TermManager {
     }
 
     #[inline]
-    pub fn get_id2term_map(&self) -> GHashMap<usize, Term> {
-        self.map
-            .values()
-            .map(|term| (term.id(), term.clone()))
-            .collect()
+    pub fn enable_id_map(&mut self) {
+        if self.id2term.is_none() {
+            let map = self
+                .map
+                .values()
+                .map(|term| (term.id(), term.clone()))
+                .collect();
+            self.id2term = Some(map);
+        }
+    }
+
+    #[inline]
+    pub fn disable_id_map(&mut self) {
+        self.id2term = None;
+    }
+
+    #[inline]
+    pub fn get_term_by_id(&self, id: usize) -> Option<Term> {
+        self.id2term.as_ref()?.get(&id).cloned()
     }
 
     #[inline]
@@ -119,6 +138,10 @@ impl TermManager {
         }
         self.map
             .retain(|_, term| live.contains(&term.inner.as_ptr()));
+        if let Some(id2term) = &mut self.id2term {
+            id2term.retain(|_, term| live.contains(&term.inner.as_ptr()));
+            id2term.shrink_to_fit();
+        }
         let after = self.map.len();
         self.map.shrink_to_fit();
         debug!(
@@ -287,13 +310,20 @@ mod tests {
         drop(x);
         set_term_mgr(manager);
 
-        let id2term = current_term_mgr().get_id2term_map();
-
-        let expr = id2term.get(&expr_id).unwrap();
+        current_term_mgr().enable_id_map();
+        let expr = current_term_mgr().get_term_by_id(expr_id).unwrap();
         assert_eq!(expr.id(), expr_id);
 
         let z = Term::new_var(Sort::Bv(4));
         assert!(z.id() > expr_id);
+    }
+
+    #[test]
+    fn optional_id_map_tracks_new_terms() {
+        current_term_mgr().enable_id_map();
+        let x = Term::new_var(Sort::bool());
+        assert_eq!(current_term_mgr().get_term_by_id(x.id()).unwrap(), x);
+        current_term_mgr().disable_id_map();
     }
 
     #[test]
