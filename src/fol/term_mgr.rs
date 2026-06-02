@@ -54,6 +54,24 @@ impl TermManager {
     }
 
     #[inline]
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
+    #[inline]
+    pub fn get_id2term_map(&self) -> GHashMap<usize, Term> {
+        self.map
+            .values()
+            .map(|term| (term.id(), term.clone()))
+            .collect()
+    }
+
+    #[inline]
     fn add_internal_ref(term: &Term, internal_refs: &mut GHashMap<*const TermInner, usize>) {
         *internal_refs.entry(term.inner.as_ptr()).or_insert(0) += 1;
     }
@@ -249,14 +267,6 @@ impl SerializedTermType {
     }
 }
 
-pub fn term_from_id(id: usize) -> Option<Term> {
-    current_term_mgr()
-        .map
-        .values()
-        .find(|term| term.id() == id)
-        .cloned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,7 +287,9 @@ mod tests {
         drop(x);
         set_term_mgr(manager);
 
-        let expr = term_from_id(expr_id).unwrap();
+        let id2term = current_term_mgr().get_id2term_map();
+
+        let expr = id2term.get(&expr_id).unwrap();
         assert_eq!(expr.id(), expr_id);
 
         let z = Term::new_var(Sort::Bv(4));
