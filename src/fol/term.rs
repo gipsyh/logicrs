@@ -517,6 +517,11 @@ impl TermSymbol {
     pub fn new() -> Self {
         Self::default()
     }
+
+    #[inline]
+    pub fn add_symbol(&mut self, t: &Term, s: String) {
+        self.sym.entry(t.clone()).or_default().push(s);
+    }
 }
 
 impl IntoIterator for TermSymbol {
