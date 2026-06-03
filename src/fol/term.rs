@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::fmt::{self, Debug};
 use std::hash;
 use std::iter::once;
-use std::ops::Index;
+use std::ops::{DerefMut, Index};
 use std::{hash::Hash, ops::Deref};
 
 #[derive(Clone)]
@@ -504,5 +504,43 @@ impl Index<usize> for OpTerm {
     #[inline]
     fn index(&self, index: usize) -> &Self::Output {
         &self.terms[index]
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, Default)]
+pub struct TermSymbol {
+    sym: GHashMap<Term, Vec<String>>,
+}
+
+impl TermSymbol {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl IntoIterator for TermSymbol {
+    type Item = (Term, Vec<String>);
+    type IntoIter = <GHashMap<Term, Vec<String>> as IntoIterator>::IntoIter;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.sym.into_iter()
+    }
+}
+
+impl Deref for TermSymbol {
+    type Target = GHashMap<Term, Vec<String>>;
+
+    #[inline]
+    fn deref(&self) -> &Self::Target {
+        &self.sym
+    }
+}
+
+impl DerefMut for TermSymbol {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.sym
     }
 }
