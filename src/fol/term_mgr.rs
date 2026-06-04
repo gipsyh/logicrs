@@ -115,6 +115,11 @@ impl TermManager {
             Self::add_term_type_internal_refs(ty, &mut internal_refs);
             Self::add_term_type_internal_refs(term.deref(), &mut internal_refs);
         }
+        if let Some(id2term) = &self.id2term {
+            for term in id2term.values() {
+                Self::add_internal_ref(term, &mut internal_refs);
+            }
+        }
 
         let mut stack: Vec<Term> = self
             .map
@@ -339,5 +344,24 @@ mod tests {
         term_gc();
 
         assert_ne!(Term::bool_const(true).id(), c_id);
+    }
+
+    #[test]
+    fn term_gc_collects_dead_dag_with_id_map_enabled() {
+        set_term_mgr(TermManager::new());
+
+        term_mgr().enable_id_map();
+        let c = Term::bool_const(true);
+        let x = Term::new_var(Sort::bool());
+        let expr = &c & &x;
+        let expr_id = expr.id();
+        drop(c);
+        drop(x);
+        drop(expr);
+
+        term_gc();
+
+        assert!(term_mgr().is_empty());
+        assert!(term_mgr().get_term_by_id(expr_id).is_none());
     }
 }
