@@ -520,7 +520,10 @@ impl TermSymbol {
 
     #[inline]
     pub fn add_symbol(&mut self, t: &Term, s: String) {
-        self.sym.entry(t.clone()).or_default().push(s);
+        let entry = self.sym.entry(t.clone()).or_default();
+        if !entry.contains(&s) {
+            entry.push(s);
+        }
     }
 }
 
