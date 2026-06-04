@@ -521,9 +521,10 @@ impl TermSymbol {
 
     #[inline]
     pub fn add_symbol(&mut self, t: &Term, s: String) {
-        if let Some(existing) = self.s2t.insert(s.clone(), t.clone())
-            && existing != t
-        {
+        if let Some(existing) = self.s2t.insert(s.clone(), t.clone()) {
+            if existing == t {
+                return;
+            }
             panic!("duplicate signal symbol `{s}`");
         }
         self.t2s.entry(t.clone()).or_default().push(s);
