@@ -11,7 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::fmt::{self, Debug};
 use std::hash;
 use std::iter::once;
-use std::ops::{DerefMut, Index};
+use std::ops::Index;
 use std::{hash::Hash, ops::Deref};
 
 #[derive(Clone)]
@@ -509,7 +509,8 @@ impl Index<usize> for OpTerm {
 
 #[derive(Clone, Debug, Deserialize, Serialize, Default)]
 pub struct TermSymbol {
-    sym: GHashMap<Term, Vec<String>>,
+    t2s: GHashMap<Term, Vec<String>>,
+    s2t: GHashMap<String, Term>,
 }
 
 impl TermSymbol {
@@ -520,10 +521,29 @@ impl TermSymbol {
 
     #[inline]
     pub fn add_symbol(&mut self, t: &Term, s: String) {
-        let entry = self.sym.entry(t.clone()).or_default();
-        if !entry.contains(&s) {
-            entry.push(s);
+        assert!(self.s2t.insert(s.clone(), t.clone()).is_none());
+        self.t2s.entry(t.clone()).or_default().push(s);
+    }
+
+    #[inline]
+    pub fn term_of_sym(&self, s: impl AsRef<str>) -> Option<Term> {
+        self.s2t.get(s.as_ref()).cloned()
+    }
+
+    pub fn remove(&mut self, t: &Term) -> Option<Vec<String>> {
+        let r = self.t2s.remove(t);
+        if let Some(r) = r.as_ref() {
+            for r in r.iter() {
+                assert!(self.s2t.remove(r).is_some());
+            }
         }
+        r
+    }
+
+    #[inline]
+    pub fn retain(&mut self, mut f: impl FnMut(&Term) -> bool) {
+        self.t2s.retain(|t, _| f(t));
+        self.s2t.retain(|_, t| self.t2s.contains_key(t));
     }
 }
 
@@ -533,7 +553,7 @@ impl IntoIterator for TermSymbol {
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        self.sym.into_iter()
+        self.t2s.into_iter()
     }
 }
 
@@ -542,13 +562,6 @@ impl Deref for TermSymbol {
 
     #[inline]
     fn deref(&self) -> &Self::Target {
-        &self.sym
-    }
-}
-
-impl DerefMut for TermSymbol {
-    #[inline]
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.sym
+        &self.t2s
     }
 }
