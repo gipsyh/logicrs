@@ -46,6 +46,15 @@ impl Sort {
             panic!()
         }
     }
+
+    #[inline]
+    pub fn array_depth(&self) -> usize {
+        if let Sort::Array(index, _) = self {
+            1usize.checked_shl(*index as _).unwrap()
+        } else {
+            panic!()
+        }
+    }
 }
 
 impl Debug for Sort {
