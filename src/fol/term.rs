@@ -557,7 +557,6 @@ impl TermSymbol {
         Some(t)
     }
 
-    #[inline]
     pub fn retain(&mut self, mut f: impl FnMut(&Term) -> bool) {
         self.t2s.retain(|t, _| f(t));
         self.s2t.retain(|_, t| self.t2s.contains_key(t));
@@ -571,6 +570,10 @@ impl TermSymbol {
         };
         self.add_symbol(&t, new);
         true
+    }
+
+    pub fn symbols(&self) -> impl Iterator<Item = &String> {
+        self.s2t.keys()
     }
 }
 
