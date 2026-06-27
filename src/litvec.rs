@@ -273,6 +273,17 @@ impl LitVec {
         }
         new
     }
+
+    #[inline]
+    pub fn filter(&self, f: impl Fn(Lit) -> bool) -> LitVec {
+        let mut new = LitVec::new_with_cap(self.len());
+        for &l in self.iter() {
+            if f(l) {
+                new.push(l);
+            }
+        }
+        new
+    }
 }
 
 impl Default for LitVec {

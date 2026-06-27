@@ -73,6 +73,26 @@ impl DagCnf {
         self.cnf.iter().map(|v| v.len()).sum()
     }
 
+    /// Estimate the heap memory (in bytes) held by this `DagCnf`, based on the
+    /// allocated capacities of the underlying vectors. This covers `cnf` (the
+    /// per-variable clause lists) and `dep` (the per-variable dependency lists);
+    /// the stack footprint of the struct itself is not included.
+    pub fn mem_usage(&self) -> usize {
+        let mut bytes = 0usize;
+        bytes += self.cnf.capacity() * std::mem::size_of::<LitVvec>();
+        for lv in self.cnf.iter() {
+            bytes += lv.capacity() * std::mem::size_of::<LitVec>();
+            for cls in lv.iter() {
+                bytes += cls.capacity() * std::mem::size_of::<Lit>();
+            }
+        }
+        bytes += self.dep.capacity() * std::mem::size_of::<Vec<Var>>();
+        for d in self.dep.iter() {
+            bytes += d.capacity() * std::mem::size_of::<Var>();
+        }
+        bytes
+    }
+
     #[inline]
     pub fn clause(&self) -> Flatten<slice::Iter<'_, LitVvec>> {
         self.cnf.iter().flatten()
