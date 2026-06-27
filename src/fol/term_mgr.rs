@@ -1,8 +1,8 @@
 use super::{FolOp, OpTerm, Sort, Term, TermInner, TermType};
 use giputils::{
     bitvec::BitVec,
-    grc::Grc,
     hash::{GHashMap, GHashSet},
+    ptr::Grc,
 };
 use log::debug;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};

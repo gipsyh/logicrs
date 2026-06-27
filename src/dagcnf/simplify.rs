@@ -3,7 +3,7 @@ use crate::{
     LitMap, LitOrdVec, LitVec, LitVvec, Var, VarAssign, VarRange, lemmas_subsume_simplify,
     occur::Occurs,
 };
-use giputils::{allocator::Gallocator, grc::Grc, hash::GHashSet, heap::BinaryHeap};
+use giputils::{allocator::Gallocator, hash::GHashSet, heap::BinaryHeap, ptr::Grc};
 use log::debug;
 use std::{
     iter::once,

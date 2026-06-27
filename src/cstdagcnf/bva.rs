@@ -1,5 +1,5 @@
 use crate::{Cnf, CstDagCnf, DagCnf, Lit, LitMap, LitOrdVec, LitVec, Var, VarRange, occur::Occurs};
-use giputils::{allocator::Gallocator, grc::Grc};
+use giputils::{allocator::Gallocator, ptr::Grc};
 use std::{
     cmp::Ordering,
     collections::{BinaryHeap, HashMap, HashSet},

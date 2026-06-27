@@ -1,5 +1,5 @@
 use crate::{Lit, LitMap, Var};
-use giputils::{allocator::Gallocator, grc::Grc, gvec::Gvec, heap::BinaryHeapCmp};
+use giputils::{allocator::Gallocator, gvec::Gvec, heap::BinaryHeapCmp, ptr::Grc};
 
 #[derive(Debug, Clone, Default)]
 pub struct Occur {
