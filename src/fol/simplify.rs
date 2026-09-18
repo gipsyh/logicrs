@@ -1336,10 +1336,9 @@ impl RewriteRule for EqXorZero {
         // eq(xor(a,b), 0) => eq(a,b)
         let (xor_term, cst) = if let Some(xc) = x.try_bv_const() {
             (y, xc)
-        } else if let Some(yc) = y.try_bv_const() {
-            (x, yc)
         } else {
-            return None;
+            let yc = y.try_bv_const()?;
+            (x, yc)
         };
         if !cst.is_zero() {
             return None;

@@ -18,8 +18,9 @@ impl LitVvec {
 
     #[inline]
     pub fn cnf_and(n: Lit, lits: &[Lit]) -> Self {
-        let mut vec = Vec::new();
-        let mut cls = LitVec::from([n]);
+        let mut vec = Vec::with_capacity(lits.len() + 1);
+        let mut cls = LitVec::new_with_cap(lits.len() + 1);
+        cls.push(n);
         for l in lits.iter() {
             vec.push(LitVec::from([!n, *l]));
             cls.push(!*l);
@@ -30,8 +31,9 @@ impl LitVvec {
 
     #[inline]
     pub fn cnf_or(n: Lit, lits: &[Lit]) -> Self {
-        let mut vec = Vec::new();
-        let mut cls = LitVec::from([!n]);
+        let mut vec = Vec::with_capacity(lits.len() + 1);
+        let mut cls = LitVec::new_with_cap(lits.len() + 1);
+        cls.push(!n);
         for l in lits.iter() {
             vec.push(LitVec::from([n, !*l]));
             cls.push(*l);

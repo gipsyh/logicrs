@@ -16,7 +16,7 @@ use std::{
 pub struct DagCnf {
     max_var: Var,
     cnf: VarMap<LitVvec>,
-    dep: VarMap<Vec<Var>>,
+    dep: VarMap<Box<[Var]>>,
 }
 
 impl DagCnf {
@@ -35,8 +35,10 @@ impl DagCnf {
 
     #[inline]
     pub fn new_var_to(&mut self, n: Var) {
-        while self.max_var < n {
-            self.new_var();
+        if self.max_var < n {
+            self.max_var = n;
+            self.dep.reserve(n);
+            self.cnf.reserve(n);
         }
     }
 
@@ -86,9 +88,9 @@ impl DagCnf {
                 bytes += cls.capacity() * std::mem::size_of::<Lit>();
             }
         }
-        bytes += self.dep.capacity() * std::mem::size_of::<Vec<Var>>();
+        bytes += self.dep.capacity() * std::mem::size_of::<Box<[Var]>>();
         for d in self.dep.iter() {
-            bytes += d.capacity() * std::mem::size_of::<Var>();
+            bytes += d.len() * std::mem::size_of::<Var>();
         }
         bytes
     }
@@ -135,16 +137,32 @@ impl DagCnf {
     }
 
     #[inline]
+    pub fn add_rel_owned(&mut self, n: Var, mut rel: LitVvec) {
+        self.new_var_to(n);
+        if n.is_constant() {
+            assert!(rel.eq(&[LitVec::from(Lit::constant(true))]));
+            return;
+        }
+        assert!(self.dep[n].is_empty() && self.cnf[n].is_empty());
+        for r in rel.iter_mut() {
+            r.sort();
+            assert!(r.last().var() == n);
+        }
+        self.dep[n] = deps(n, &rel);
+        self.cnf[n] = rel;
+    }
+
+    #[inline]
     pub fn set_rel(&mut self, n: Var, rel: &[LitVec]) {
         self.new_var_to(n);
-        self.dep[n].clear();
+        self.dep[n] = Box::default();
         self.cnf[n].clear();
         self.add_rel(n, rel);
     }
 
     #[inline]
     pub fn del_rel(&mut self, n: Var) {
-        self.dep[n].clear();
+        self.dep[n] = Box::default();
         self.cnf[n].clear();
     }
 
@@ -358,7 +376,7 @@ impl DagCnf {
         for v in VarRange::new_inclusive(Var::CONST, self.max_var) {
             if map.contains_key(&v) {
                 self.cnf[v].clear();
-                self.dep[v].clear();
+                self.dep[v] = Box::default();
             }
             for cls in self.cnf[v].iter_mut() {
                 for l in cls.iter_mut() {
@@ -428,13 +446,26 @@ impl Display for DagCnf {
 }
 
 #[inline]
-fn deps(n: Var, cnf: &[LitVec]) -> Vec<Var> {
-    let mut dep = GHashSet::new();
+fn deps(n: Var, cnf: &[LitVec]) -> Box<[Var]> {
+    if cnf.len() > 16 || cnf.iter().any(|cls| cls.len() > 16) {
+        let mut dep = GHashSet::new();
+        for cls in cnf {
+            for l in cls {
+                if l.var() != n {
+                    dep.insert(l.var());
+                }
+            }
+        }
+        return dep.into_iter().collect::<Vec<_>>().into_boxed_slice();
+    }
+    let mut dep = Vec::new();
     for cls in cnf.iter() {
         for l in cls.iter() {
-            dep.insert(l.var());
+            let v = l.var();
+            if v != n && !dep.contains(&v) {
+                dep.push(v);
+            }
         }
     }
-    dep.remove(&n);
-    dep.into_iter().collect()
+    dep.into_boxed_slice()
 }
