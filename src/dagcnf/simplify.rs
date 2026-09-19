@@ -411,8 +411,9 @@ fn clause_subsume_simplify(lemmas: LitVvec) -> LitVvec {
 }
 
 impl DagCnf {
-    pub fn simplify(&self, frozen: impl IntoIterator<Item = impl Into<Var>>) -> Self {
-        let mut simp = DagCnfSimplify::new(self);
+    pub fn simplify(self, frozen: impl IntoIterator<Item = impl Into<Var>>) -> Self {
+        let mut simp = DagCnfSimplify::new(&self);
+        drop(self);
         for v in frozen.into_iter().map(|l| l.into()).chain(once(Var::CONST)) {
             simp.froze(v);
         }

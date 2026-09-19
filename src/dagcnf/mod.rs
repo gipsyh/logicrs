@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fmt::Display,
     iter::{Flatten, Zip, once},
+    mem::take,
     ops::Index,
     slice,
 };
@@ -344,15 +345,17 @@ impl DagCnf {
             domain_map.insert(*d, v);
         }
         let map_lit = |l: &Lit| l.map_var(|v| domain_map[v]);
-        for (d, v) in domain_map.iter() {
+        for (i, d) in domain.iter().enumerate() {
             if d.is_constant() {
                 continue;
             }
-            let mut new_cls = Vec::new();
-            for cls in self.cnf[*d].iter() {
-                new_cls.push(cls.iter().map(map_lit).collect());
+            let mut cls = take(&mut self.cnf[*d]);
+            for r in cls.iter_mut() {
+                for l in r.iter_mut() {
+                    *l = map_lit(l);
+                }
             }
-            res.add_rel(*v, &new_cls);
+            res.add_rel_owned(Var::new(i), cls);
         }
         *self = res;
         domain_map
