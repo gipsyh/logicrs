@@ -34,20 +34,27 @@ pub struct Var(pub u32);
 
 impl Var {
     pub const CONST: Var = Var(0);
+    pub const NONE: Var = Var(u32::MAX);
 
     #[inline]
-    pub fn new(x: usize) -> Self {
+    pub const fn new(x: usize) -> Self {
         Self(x as _)
     }
 
     #[inline]
-    pub fn lit(&self) -> Lit {
+    pub const fn lit(&self) -> Lit {
+        debug_assert!(!self.is_none());
         Lit(self.0 << 1)
     }
 
     #[inline]
-    pub fn is_constant(&self) -> bool {
-        *self == Self::CONST
+    pub const fn is_constant(&self) -> bool {
+        self.0 == Self::CONST.0
+    }
+
+    #[inline]
+    pub const fn is_none(&self) -> bool {
+        self.0 == Self::NONE.0
     }
 }
 
@@ -123,14 +130,18 @@ impl From<&Var> for Var {
 impl Display for Var {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        if self.is_none() {
+            write!(f, "NoneVar")
+        } else {
+            write!(f, "{}", self.0)
+        }
     }
 }
 
 impl Debug for Var {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
+        Display::fmt(self, f)
     }
 }
 
@@ -240,7 +251,7 @@ pub struct Lit(u32);
 impl From<Var> for Lit {
     #[inline]
     fn from(value: Var) -> Self {
-        Self(value.0 << 1)
+        value.lit()
     }
 }
 
@@ -254,6 +265,7 @@ impl From<Lit> for u32 {
 impl From<Lit> for i32 {
     #[inline]
     fn from(val: Lit) -> Self {
+        debug_assert!(!val.is_none());
         let mut v: i32 = val.var().into();
         if !val.polarity() {
             v = -v;
@@ -270,23 +282,33 @@ impl From<i32> for Lit {
 }
 
 impl Lit {
+    pub const NONE: Lit = Lit(u32::MAX);
+
     #[inline]
-    pub fn new(var: Var, polarity: bool) -> Self {
+    pub const fn is_none(&self) -> bool {
+        self.0 == Self::NONE.0
+    }
+
+    #[inline]
+    pub const fn new(var: Var, polarity: bool) -> Self {
+        debug_assert!(!var.is_none());
         Lit(var.0 + var.0 + !polarity as u32)
     }
 
     #[inline]
-    pub fn var(&self) -> Var {
+    pub const fn var(&self) -> Var {
+        debug_assert!(!self.is_none());
         Var(self.0 >> 1)
     }
 
     #[inline]
-    pub fn polarity(&self) -> bool {
+    pub const fn polarity(&self) -> bool {
+        debug_assert!(!self.is_none());
         self.0 & 1 == 0
     }
 
     #[inline]
-    pub fn constant(polarity: bool) -> Self {
+    pub const fn constant(polarity: bool) -> Self {
         Self::new(Var::CONST, !polarity)
     }
 
@@ -326,6 +348,7 @@ impl Not for Lit {
 
     #[inline]
     fn not(mut self) -> Self::Output {
+        debug_assert!(!self.is_none());
         self.0 ^= 1;
         self
     }
@@ -364,7 +387,9 @@ impl From<&Lit> for Lit {
 impl Debug for Lit {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.polarity() {
+        if self.is_none() {
+            write!(f, "NoneLit")
+        } else if self.polarity() {
             write!(f, "{}", self.var())
         } else {
             write!(f, "-{}", self.var())
@@ -376,5 +401,22 @@ impl Display for Lit {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         Debug::fmt(&self, f)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_var_lit_none() {
+        assert!(Var::NONE.is_none());
+        assert!(!Var::CONST.is_none());
+        assert!(!Var::new(1).is_none());
+
+        assert!(Lit::NONE.is_none());
+        assert!(!Lit::constant(false).is_none());
+        assert!(!Lit::constant(true).is_none());
+        assert!(!Lit::new(Var::new(1), true).is_none());
     }
 }
