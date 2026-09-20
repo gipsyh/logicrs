@@ -202,35 +202,38 @@ impl LitVec {
         Some(new)
     }
 
+    /// Remove `v` and merge two sorted clauses into a sorted, duplicate-free
+    /// resolvent. Return `None` if the remaining literals are complementary.
+    /// The caller checks that the clauses contain opposite pivot literals.
     #[inline]
     pub fn ordered_resolvent(&self, other: &LitVec, v: Var) -> Option<LitVec> {
         debug_assert!(self.is_sorted());
         debug_assert!(other.is_sorted());
-        let (x, y) = if self.len() < other.len() {
-            (self, other)
-        } else {
-            (other, self)
-        };
         let mut new = LitVec::new_with_cap(self.len() + other.len());
         let (mut i, mut j) = (0, 0);
-        while i < x.len() {
-            if x[i].var() == v {
+        while i < self.len() || j < other.len() {
+            let lit = if i < self.len() && (j == other.len() || self[i] <= other[j]) {
+                let lit = self[i];
                 i += 1;
+                lit
+            } else {
+                let lit = other[j];
+                j += 1;
+                lit
+            };
+            if lit.var() == v {
                 continue;
             }
-            while j < y.len() && y[j].var() < x[i].var() {
-                j += 1;
-            }
-            if j < y.len() && x[i].var() == y[j].var() {
-                if x[i] == !y[j] {
+            if let Some(&last) = new.lits.last() {
+                if lit == last {
+                    continue;
+                }
+                if lit == !last {
                     return None;
                 }
-            } else {
-                new.push(x[i]);
             }
-            i += 1;
+            new.push(lit);
         }
-        new.extend(y.iter().filter(|l| l.var() != v).copied());
         Some(new)
     }
 
