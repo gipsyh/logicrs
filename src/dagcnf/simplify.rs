@@ -11,11 +11,11 @@ use std::{
 };
 
 pub struct DagCnfSimplify {
-    cdb: Grc<Gallocator<LitOrdVec>>,
+    cdb: Grc<Gallocator<LitVec>>,
     max_var: Var,
     cnf: LitMap<Vec<usize>>,
     #[allow(clippy::type_complexity)]
-    occur: Option<(Grc<Occurs<LitOrdVec>>, BinaryHeap<Var, Occurs<LitOrdVec>>)>,
+    occur: Option<(Grc<Occurs<LitVec>>, BinaryHeap<Var, Occurs<LitVec>>)>,
     frozen: GHashSet<Var>,
     value: VarAssign,
     num_ocls: usize,
@@ -24,9 +24,27 @@ pub struct DagCnfSimplify {
 
 impl DagCnfSimplify {
     pub fn new(dagcnf: &DagCnf) -> Self {
+        Self::from_rels(
+            dagcnf.max_var,
+            dagcnf.num_clause(),
+            dagcnf.cnf.iter().cloned(),
+        )
+    }
+
+    /// Move clause buffers out of the DAG and release its dependency lists
+    /// before allocating the simplifier's occurrence lists.
+    pub fn from_owned(mut dagcnf: DagCnf) -> Self {
         let num_ocls = dagcnf.num_clause();
+        drop(std::mem::take(&mut dagcnf.dep));
+        Self::from_rels(
+            dagcnf.max_var,
+            num_ocls,
+            dagcnf.cnf.iter_mut().map(std::mem::take),
+        )
+    }
+
+    fn from_rels(max_var: Var, num_ocls: usize, rels: impl IntoIterator<Item = LitVvec>) -> Self {
         let cdb = Grc::new(Gallocator::new());
-        let max_var = dagcnf.max_var;
         let cnf = LitMap::new_with(max_var);
         let value = VarAssign::new_with(max_var);
         let mut res = Self {
@@ -39,8 +57,8 @@ impl DagCnfSimplify {
             num_ocls,
             time: Duration::default(),
         };
-        for v in VarRange::new_inclusive(Var::CONST, max_var) {
-            for mut cls in dagcnf.cnf[v].clone() {
+        for (v, rel) in VarRange::new_inclusive(Var::CONST, max_var).zip(rels) {
+            for mut cls in rel {
                 cls.sort();
                 cls.dedup();
                 assert!(cls.last().var().eq(&v));
@@ -85,7 +103,6 @@ impl DagCnfSimplify {
         let Some(rel) = rel.ordered_simp(&self.value) else {
             return;
         };
-        let rel = LitOrdVec::new(rel);
         let n = rel.last();
         if rel.len() == 1 {
             assert!(!self.value.v(n).is_true());
@@ -104,6 +121,11 @@ impl DagCnfSimplify {
         }
     }
 
+    fn dealloc_rel(&mut self, cls: usize) {
+        self.cdb.dealloc(cls);
+        self.cdb[cls] = LitVec::new();
+    }
+
     #[allow(unused)]
     fn remove_rel(&mut self, rel: usize) {
         let o = self.cdb[rel].last();
@@ -120,7 +142,7 @@ impl DagCnfSimplify {
                         }
                     }
                 }
-                self.cdb.dealloc(cls);
+                self.dealloc_rel(cls);
             } else {
                 i += 1;
             }
@@ -144,7 +166,7 @@ impl DagCnfSimplify {
                             }
                         }
                     }
-                    self.cdb.dealloc(cls);
+                    self.dealloc_rel(cls);
                 } else {
                     i += 1;
                 }
@@ -169,9 +191,10 @@ impl DagCnfSimplify {
                 }
             }
             self.cdb.dealloc(cls);
+            self.cdb[cls] = LitVec::new();
         }
-        self.cnf[ln].clear();
-        self.cnf[!ln].clear();
+        self.cnf[ln] = Vec::new();
+        self.cnf[!ln] = Vec::new();
     }
 
     fn var_rels(&self, v: Var) -> Vec<usize> {
@@ -274,33 +297,33 @@ impl DagCnfSimplify {
             if cj == ci {
                 continue;
             }
-            let (res, diff) = self.cdb[ci].subsume_execpt_one(&self.cdb[cj]);
+            let (res, diff) = self.cdb[ci].ordered_subsume_execpt_one(&self.cdb[cj]);
             if res {
                 self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
-                self.cdb.dealloc(cj);
+                self.dealloc_rel(cj);
                 continue;
             } else if let Some(diff) = diff {
                 if self.cdb[ci].len() == self.cdb[cj].len() {
                     if diff.var() == self.cdb[ci].last().var() {
-                        self.cdb.dealloc(ci);
-                        self.cdb.dealloc(cj);
                         self.cnf[self.cdb[ci].last()].retain(|&c| c != ci);
                         self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
+                        self.dealloc_rel(ci);
+                        self.dealloc_rel(cj);
                         return;
                     }
-                    let mut cube = self.cdb[ci].as_litvec().clone();
+                    let mut cube = self.cdb[ci].clone();
                     cube.retain(|l| *l != diff);
-                    self.cdb[ci] = LitOrdVec::new(cube);
+                    self.cdb[ci] = cube;
                     self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
-                    self.cdb.dealloc(cj);
+                    self.dealloc_rel(cj);
                 } else if diff.var() == self.cdb[cj].last().var() {
                     self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
-                    self.cdb.dealloc(cj);
+                    self.dealloc_rel(cj);
                 } else {
-                    let mut cube = self.cdb[cj].as_litvec().clone();
+                    let mut cube = self.cdb[cj].clone();
                     assert!(cube.last() == self.cdb[cj].last());
                     cube.retain(|l| *l != !diff);
-                    self.cdb[cj] = LitOrdVec::new(cube);
+                    self.cdb[cj] = cube;
                 }
             }
         }
@@ -330,10 +353,11 @@ impl DagCnfSimplify {
         let mut removed = Vec::new();
         for c in cls {
             let cls = self.cdb[c].clone();
+            let len = cls.len();
             if let Some(scls) = cls.ordered_simp(&self.value) {
                 if scls.last().var() != v {
                     removed.push(c);
-                } else if cls.len() != scls.len() {
+                } else if len != scls.len() {
                     self.add_rel(scls);
                 }
             } else {
@@ -363,16 +387,24 @@ impl DagCnfSimplify {
     }
 
     pub fn finalize(&mut self) -> DagCnf {
+        self.finalize_impl(false)
+    }
+
+    fn finalize_impl(&mut self, consume: bool) -> DagCnf {
         let start = Instant::now();
         let mut dagcnf = DagCnf::new();
         dagcnf.new_var_to(self.max_var);
         for v in VarRange::new_inclusive(Var(1), self.max_var) {
-            let mut cnf: Vec<_> = self.cnf[v.lit()]
+            let mut cnf: LitVvec = self.cnf[v.lit()]
                 .iter()
                 .chain(self.cnf[!v.lit()].iter())
                 .map(|&cls| {
                     assert!(!self.cdb.is_removed(cls));
-                    self.cdb[cls].as_litvec().clone()
+                    if consume {
+                        std::mem::take(&mut self.cdb[cls])
+                    } else {
+                        self.cdb[cls].clone()
+                    }
                 })
                 .collect();
             if self.frozen.contains(&v)
@@ -381,7 +413,11 @@ impl DagCnfSimplify {
                 cnf.clear();
                 cnf.push(LitVec::from(vl));
             }
-            dagcnf.add_rel(v, &cnf);
+            dagcnf.add_rel_owned(v, cnf);
+            if consume {
+                self.cnf[v.lit()] = Vec::new();
+                self.cnf[!v.lit()] = Vec::new();
+            }
         }
         self.time += start.elapsed();
         debug!(
@@ -404,20 +440,19 @@ impl DagCnfSimplify {
 fn clause_subsume_simplify(lemmas: LitVvec) -> LitVvec {
     let lemmas: Vec<LitOrdVec> = lemmas.into_iter().map(LitOrdVec::new).collect();
     let lemmas = lemmas_subsume_simplify(lemmas);
-    lemmas
-        .into_iter()
-        .map(|l| LitVec::from(l.as_litvec().as_slice()))
-        .collect()
+    lemmas.into_iter().map(LitOrdVec::into_litvec).collect()
 }
 
 impl DagCnf {
     pub fn simplify(self, frozen: impl IntoIterator<Item = impl Into<Var>>) -> Self {
-        let mut simp = DagCnfSimplify::new(&self);
-        drop(self);
+        let mut simp = DagCnfSimplify::from_owned(self);
         for v in frozen.into_iter().map(|l| l.into()).chain(once(Var::CONST)) {
             simp.froze(v);
         }
-        simp.simplify()
+        simp.const_simplify();
+        simp.bve_simplify();
+        simp.subsume_simplify();
+        simp.finalize_impl(true)
     }
 }
 

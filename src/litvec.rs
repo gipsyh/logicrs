@@ -38,26 +38,33 @@ impl LitVec {
         }
     }
 
+    /// Simplify sorted literals in place, reusing the existing buffer.
+    /// Returns `None` for a satisfied or tautological clause.
     #[inline]
-    pub fn ordered_simp(&self, v: &VarAssign) -> Option<Self> {
-        let mut res = LitVec::new_with_cap(self.len());
+    pub fn ordered_simp(mut self, v: &VarAssign) -> Option<Self> {
+        debug_assert!(self.is_sorted());
+        let mut len = 0;
         for i in 0..self.len() {
-            let lv = v.v(self[i]);
+            let lit = self[i];
+            let lv = v.v(lit);
             if lv.is_true() {
                 return None;
             } else if lv.is_false() {
                 continue;
             }
-            if let Some(&last) = (*res).last() {
-                if self[i] == last {
+            if len > 0 {
+                let last = self[len - 1];
+                if lit == last {
                     continue;
-                } else if self[i] == !last {
+                } else if lit == !last {
                     return None;
                 }
             }
-            res.push(self[i]);
+            self[len] = lit;
+            len += 1;
         }
-        Some(res)
+        self.truncate(len);
+        Some(self)
     }
 
     #[inline]
