@@ -84,6 +84,11 @@ impl Cnf {
         self.cls = cls;
     }
 
+    /// Move the clauses out while retaining the variable domain.
+    pub fn take_clauses(&mut self) -> Vec<LitVec> {
+        std::mem::take(&mut self.cls)
+    }
+
     #[inline]
     pub fn new_and(&mut self, ands: impl IntoIterator<Item = impl Into<Lit>>) -> Lit {
         let mut and = Vec::new();

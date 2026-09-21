@@ -2,7 +2,7 @@ pub mod simplify;
 pub mod simulate;
 mod top;
 
-use crate::{Lit, LitVec, LitVvec, Var, VarLMap, VarMap, VarRange, VarVMap};
+use crate::{Cnf, Lit, LitVec, LitVvec, Var, VarLMap, VarMap, VarRange, VarVMap};
 use giputils::hash::GHashSet;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -99,6 +99,20 @@ impl DagCnf {
     #[inline]
     pub fn clause(&self) -> Flatten<slice::Iter<'_, LitVvec>> {
         self.cnf.iter().flatten()
+    }
+
+    /// Discard dependency information and move the clauses into a flat CNF.
+    /// Unlike `lower`, this consumes the DAG without cloning literal buffers.
+    pub fn into_cnf(mut self) -> Cnf {
+        drop(take(&mut self.dep));
+        let mut clauses = Vec::with_capacity(self.num_clause());
+        for rel in self.cnf.iter_mut() {
+            clauses.extend(take(rel));
+        }
+        let mut result = Cnf::new();
+        result.new_var_to(self.max_var);
+        result.set_cls(clauses);
+        result
     }
 
     #[inline]
