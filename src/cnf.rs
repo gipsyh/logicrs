@@ -98,12 +98,12 @@ impl Cnf {
                 continue;
             }
             if a.is_constant(false) {
-                return Lit::constant(false);
+                return Lit::FALSE;
             }
             and.push(a);
         }
         if and.is_empty() {
-            Lit::constant(true)
+            Lit::TRUE
         } else if and.len() == 1 {
             and[0]
         } else {
@@ -122,12 +122,12 @@ impl Cnf {
                 continue;
             }
             if o.is_constant(true) {
-                return Lit::constant(true);
+                return Lit::TRUE;
             }
             or.push(o);
         }
         if or.is_empty() {
-            Lit::constant(false)
+            Lit::FALSE
         } else if or.len() == 1 {
             or[0]
         } else {
@@ -158,7 +158,7 @@ impl Default for Cnf {
     fn default() -> Self {
         Self {
             max_var: Var(0),
-            cls: vec![LitVec::from([Lit::constant(true)])],
+            cls: vec![LitVec::from([Lit::TRUE])],
         }
     }
 }

@@ -57,7 +57,7 @@ impl Default for VarAssign {
         let v = VarMap::new();
         let mut res = Self { v };
         res.reserve(Var::CONST);
-        res.set(Lit::constant(true));
+        res.set(Lit::TRUE);
         res
     }
 }

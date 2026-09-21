@@ -139,7 +139,7 @@ impl DagCnf {
     pub fn add_rel(&mut self, n: Var, rel: &[LitVec]) {
         self.new_var_to(n);
         if n.is_constant() {
-            assert!(rel.eq(&[LitVec::from(Lit::constant(true))]));
+            assert!(rel.eq(&[LitVec::from(Lit::TRUE)]));
             return;
         }
         assert!(self.dep[n].is_empty() && self.cnf[n].is_empty());
@@ -155,7 +155,7 @@ impl DagCnf {
     pub fn add_rel_owned(&mut self, n: Var, mut rel: LitVvec) {
         self.new_var_to(n);
         if n.is_constant() {
-            assert!(rel.eq(&[LitVec::from(Lit::constant(true))]));
+            assert!(rel.eq(&[LitVec::from(Lit::TRUE)]));
             return;
         }
         assert!(self.dep[n].is_empty() && self.cnf[n].is_empty());
@@ -200,12 +200,12 @@ impl DagCnf {
                 continue;
             }
             if a.is_constant(false) {
-                return Lit::constant(false);
+                return Lit::FALSE;
             }
             and.push(a);
         }
         if and.is_empty() {
-            Lit::constant(true)
+            Lit::TRUE
         } else if and.len() == 1 {
             and[0]
         } else {
@@ -224,12 +224,12 @@ impl DagCnf {
                 continue;
             }
             if o.is_constant(true) {
-                return Lit::constant(true);
+                return Lit::TRUE;
             }
             or.push(o);
         }
         if or.is_empty() {
-            Lit::constant(false)
+            Lit::FALSE
         } else if or.len() == 1 {
             or[0]
         } else {
@@ -435,7 +435,7 @@ impl Default for DagCnf {
     fn default() -> Self {
         let max_var = Var::CONST;
         let mut cnf: VarMap<LitVvec> = VarMap::new_with(max_var);
-        cnf[max_var].push(LitVec::from(Lit::constant(true)));
+        cnf[max_var].push(LitVec::from(Lit::TRUE));
         Self {
             max_var,
             cnf,

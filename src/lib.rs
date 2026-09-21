@@ -29,7 +29,7 @@ use std::{
     ops::{Add, AddAssign, Deref, Not, Sub},
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Var(pub u32);
 
 impl Var {
@@ -55,6 +55,13 @@ impl Var {
     #[inline]
     pub const fn is_none(&self) -> bool {
         self.0 == Self::NONE.0
+    }
+}
+
+impl Default for Var {
+    #[inline]
+    fn default() -> Self {
+        Self::NONE
     }
 }
 
@@ -245,7 +252,7 @@ impl DoubleEndedIterator for VarRange {
 
 impl ExactSizeIterator for VarRange {}
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Default, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct Lit(u32);
 
 impl From<Var> for Lit {
@@ -283,6 +290,8 @@ impl From<i32> for Lit {
 
 impl Lit {
     pub const NONE: Lit = Lit(u32::MAX);
+    pub const TRUE: Lit = Lit::constant(true);
+    pub const FALSE: Lit = Lit::constant(false);
 
     #[inline]
     pub const fn is_none(&self) -> bool {
@@ -370,6 +379,13 @@ impl AsRef<Lit> for Lit {
     }
 }
 
+impl Default for Lit {
+    #[inline]
+    fn default() -> Self {
+        Self::NONE
+    }
+}
+
 impl AsMut<Lit> for Lit {
     #[inline]
     fn as_mut(&mut self) -> &mut Lit {
@@ -415,8 +431,8 @@ mod tests {
         assert!(!Var::new(1).is_none());
 
         assert!(Lit::NONE.is_none());
-        assert!(!Lit::constant(false).is_none());
-        assert!(!Lit::constant(true).is_none());
+        assert!(!Lit::FALSE.is_none());
+        assert!(!Lit::TRUE.is_none());
         assert!(!Lit::new(Var::new(1), true).is_none());
     }
 }
