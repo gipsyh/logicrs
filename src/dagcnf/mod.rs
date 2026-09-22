@@ -2,7 +2,7 @@ pub mod simplify;
 pub mod simulate;
 mod top;
 
-use crate::{Cnf, Lit, LitVec, LitVvec, Var, VarLMap, VarMap, VarRange, VarVMap};
+use crate::{Cnf, Lit, LitFixedVec, LitVvec, Var, VarLMap, VarMap, VarRange, VarVMap};
 use giputils::hash::GHashSet;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -16,7 +16,7 @@ use std::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DagCnf {
     max_var: Var,
-    cnf: VarMap<LitVvec>,
+    cnf: VarMap<LitVvec<LitFixedVec>>,
     dep: VarMap<Box<[Var]>>,
 }
 
@@ -82,11 +82,11 @@ impl DagCnf {
     /// the stack footprint of the struct itself is not included.
     pub fn mem_usage(&self) -> usize {
         let mut bytes = 0usize;
-        bytes += self.cnf.capacity() * std::mem::size_of::<LitVvec>();
+        bytes += self.cnf.capacity() * std::mem::size_of::<LitVvec<LitFixedVec>>();
         for lv in self.cnf.iter() {
-            bytes += lv.capacity() * std::mem::size_of::<LitVec>();
+            bytes += lv.capacity() * std::mem::size_of::<LitFixedVec>();
             for cls in lv.iter() {
-                bytes += cls.capacity() * std::mem::size_of::<Lit>();
+                bytes += cls.mem_usage();
             }
         }
         bytes += self.dep.capacity() * std::mem::size_of::<Box<[Var]>>();
@@ -97,7 +97,7 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn clause(&self) -> Flatten<slice::Iter<'_, LitVvec>> {
+    pub fn clause(&self) -> Flatten<slice::Iter<'_, LitVvec<LitFixedVec>>> {
         self.cnf.iter().flatten()
     }
 
@@ -131,44 +131,40 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn iter(&self) -> Zip<VarRange, std::slice::Iter<'_, LitVvec>> {
+    pub fn iter(&self) -> Zip<VarRange, std::slice::Iter<'_, LitVvec<LitFixedVec>>> {
         VarRange::new_inclusive(Var::CONST, self.max_var).zip(self.cnf.iter())
     }
 
     #[inline]
-    pub fn add_rel(&mut self, n: Var, rel: &[LitVec]) {
-        self.new_var_to(n);
-        if n.is_constant() {
-            assert!(rel.eq(&[LitVec::from(Lit::TRUE)]));
-            return;
-        }
-        assert!(self.dep[n].is_empty() && self.cnf[n].is_empty());
-        for mut r in rel.iter().cloned() {
-            r.sort();
-            assert!(r.last().var() == n);
-            self.cnf[n].push(r);
-        }
-        self.dep[n] = deps(n, &self.cnf[n]);
+    pub fn add_rel(&mut self, n: Var, rel: &[impl AsRef<[Lit]>]) {
+        self.add_rel_owned(n, rel.iter().map(|r| LitFixedVec::from(r.as_ref())));
     }
 
     #[inline]
-    pub fn add_rel_owned(&mut self, n: Var, mut rel: LitVvec) {
+    pub fn add_rel_owned(&mut self, n: Var, rel: impl IntoIterator<Item = impl Into<LitFixedVec>>) {
         self.new_var_to(n);
+        let source = rel.into_iter();
+        // Do not reuse a Vec<LitVec> allocation through in-place collection:
+        // its 24-byte slots would retain the memory saved by 8-byte handles.
+        let mut rel = Vec::<LitFixedVec>::with_capacity(source.size_hint().0);
+        for cls in source {
+            rel.push(cls.into());
+        }
         if n.is_constant() {
-            assert!(rel.eq(&[LitVec::from(Lit::TRUE)]));
+            assert!(rel.len() == 1 && rel[0].as_slice() == [Lit::TRUE]);
             return;
         }
         assert!(self.dep[n].is_empty() && self.cnf[n].is_empty());
-        for r in rel.iter_mut() {
+        for r in &mut rel {
             r.sort();
             assert!(r.last().var() == n);
         }
         self.dep[n] = deps(n, &rel);
-        self.cnf[n] = rel;
+        self.cnf[n] = rel.into();
     }
 
     #[inline]
-    pub fn set_rel(&mut self, n: Var, rel: &[LitVec]) {
+    pub fn set_rel(&mut self, n: Var, rel: &[impl AsRef<[Lit]>]) {
         self.new_var_to(n);
         self.dep[n] = Box::default();
         self.cnf[n].clear();
@@ -434,8 +430,8 @@ impl DagCnf {
 impl Default for DagCnf {
     fn default() -> Self {
         let max_var = Var::CONST;
-        let mut cnf: VarMap<LitVvec> = VarMap::new_with(max_var);
-        cnf[max_var].push(LitVec::from(Lit::TRUE));
+        let mut cnf: VarMap<LitVvec<LitFixedVec>> = VarMap::new_with(max_var);
+        cnf[max_var].push(LitFixedVec::from([Lit::TRUE]));
         Self {
             max_var,
             cnf,
@@ -445,7 +441,7 @@ impl Default for DagCnf {
 }
 
 impl Index<Var> for DagCnf {
-    type Output = [LitVec];
+    type Output = [LitFixedVec];
 
     #[inline]
     fn index(&self, index: Var) -> &Self::Output {
@@ -463,7 +459,7 @@ impl Display for DagCnf {
 }
 
 #[inline]
-fn deps(n: Var, cnf: &[LitVec]) -> Box<[Var]> {
+fn deps(n: Var, cnf: &[LitFixedVec]) -> Box<[Var]> {
     if cnf.len() > 16 || cnf.iter().any(|cls| cls.len() > 16) {
         let mut dep = GHashSet::new();
         for cls in cnf {

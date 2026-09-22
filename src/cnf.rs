@@ -1,4 +1,4 @@
-use crate::{DagCnf, Lit, LitVec, LitVvec, Var, VarVMap};
+use crate::{DagCnf, Lit, LitFixedVec, LitVvec, Var, VarVMap};
 use giputils::hash::GHashSet;
 use std::{
     iter::once,
@@ -8,7 +8,7 @@ use std::{
 #[derive(Debug, Clone)]
 pub struct Cnf {
     max_var: Var,
-    cls: Vec<LitVec>,
+    cls: Vec<LitFixedVec>,
 }
 
 impl Cnf {
@@ -37,18 +37,18 @@ impl Cnf {
         if let Some(m) = cls.iter().map(|l| l.var()).max() {
             self.max_var = self.max_var.max(m);
         }
-        self.cls.push(LitVec::from(cls));
+        self.cls.push(LitFixedVec::from(cls));
     }
 
     #[inline]
-    pub fn add_clauses(&mut self, cls: impl IntoIterator<Item = impl AsRef<LitVec>>) {
+    pub fn add_clauses(&mut self, cls: impl IntoIterator<Item = impl AsRef<[Lit]>>) {
         for cls in cls {
             self.add_clause(cls.as_ref());
         }
     }
 
     #[inline]
-    pub fn clauses(&self) -> &[LitVec] {
+    pub fn clauses(&self) -> &[LitFixedVec] {
         &self.cls
     }
 
@@ -80,12 +80,14 @@ impl Cnf {
         domain_map
     }
 
-    pub fn set_cls(&mut self, cls: Vec<LitVec>) {
-        self.cls = cls;
+    pub fn set_cls(&mut self, cls: Vec<impl Into<LitFixedVec>>) {
+        self.cls = cls.into_iter().map(Into::into).collect();
+        // In-place collection may keep the larger LitVec allocation.
+        self.cls.shrink_to_fit();
     }
 
     /// Move the clauses out while retaining the variable domain.
-    pub fn take_clauses(&mut self) -> Vec<LitVec> {
+    pub fn take_clauses(&mut self) -> Vec<LitFixedVec> {
         std::mem::take(&mut self.cls)
     }
 
@@ -139,7 +141,7 @@ impl Cnf {
 }
 
 impl Deref for Cnf {
-    type Target = [LitVec];
+    type Target = [LitFixedVec];
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -158,7 +160,7 @@ impl Default for Cnf {
     fn default() -> Self {
         Self {
             max_var: Var(0),
-            cls: vec![LitVec::from([Lit::TRUE])],
+            cls: vec![LitFixedVec::from([Lit::TRUE])],
         }
     }
 }

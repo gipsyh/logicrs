@@ -2,11 +2,238 @@ use crate::{Lit, Var, VarAssign};
 use giputils::hash::GHashSet;
 use serde::{Deserialize, Serialize};
 use std::{
+    alloc::{Layout, handle_alloc_error},
     cmp::Ordering,
     fmt::{self, Debug, Display},
     ops::{Deref, DerefMut, Not},
+    ptr::{self, NonNull},
     slice,
 };
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+union FixedLitData {
+    len: u32,
+    lit: Lit,
+}
+
+/// A fixed-length, owned literal slice. The handle is one pointer; each nonempty
+/// allocation contains a u32 length followed immediately by the literals.
+/// Empty slices do not allocate. Allocation and deallocation use malloc/free.
+#[derive(Default)]
+pub struct LitFixedVec(Option<NonNull<FixedLitData>>);
+
+// The allocation is uniquely owned. Shared access only exposes &[Lit], and
+// mutating the literals requires exclusive access to the owner.
+unsafe impl Send for LitFixedVec {}
+unsafe impl Sync for LitFixedVec {}
+
+impl LitFixedVec {
+    #[inline]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    #[inline]
+    pub fn len(&self) -> u32 {
+        // SAFETY: every non-null allocation has an initialized length header.
+        self.0.map_or(0, |data| unsafe { data.as_ref().len })
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+
+    #[inline]
+    pub fn last(&self) -> Lit {
+        *self.as_slice().last().expect("empty literal vector")
+    }
+
+    #[inline]
+    pub fn as_slice(&self) -> &[Lit] {
+        self
+    }
+
+    /// Requested allocation size, excluding allocator bookkeeping/rounding.
+    pub fn mem_usage(&self) -> usize {
+        if self.is_empty() {
+            0
+        } else {
+            (self.len() as usize + 1) * size_of::<FixedLitData>()
+        }
+    }
+
+    #[inline]
+    pub fn map(&self, f: impl Fn(Lit) -> Lit) -> LitVec {
+        self.iter().copied().map(f).collect()
+    }
+}
+
+impl From<&[Lit]> for LitFixedVec {
+    #[inline]
+    fn from(lits: &[Lit]) -> Self {
+        if lits.is_empty() {
+            return Self::new();
+        }
+        let len = u32::try_from(lits.len()).expect("literal vector too long");
+        let count = lits.len().checked_add(1).expect("literal vector too long");
+        let layout = Layout::array::<FixedLitData>(count).expect("literal vector too long");
+        // SAFETY: malloc provides sufficient alignment for FixedLitData. The
+        // checked layout includes the header and every literal. No references
+        // escape before the header and payload are fully initialized.
+        unsafe {
+            let raw = libc::malloc(layout.size()).cast::<FixedLitData>();
+            let data = NonNull::new(raw).unwrap_or_else(|| handle_alloc_error(layout));
+            raw.write(FixedLitData { len });
+            ptr::copy_nonoverlapping(lits.as_ptr(), raw.add(1).cast::<Lit>(), lits.len());
+            Self(Some(data))
+        }
+    }
+}
+
+impl<const N: usize> From<[Lit; N]> for LitFixedVec {
+    #[inline]
+    fn from(lits: [Lit; N]) -> Self {
+        Self::from(lits.as_slice())
+    }
+}
+
+impl From<LitVec> for LitFixedVec {
+    #[inline]
+    fn from(lits: LitVec) -> Self {
+        Self::from(lits.as_slice())
+    }
+}
+
+impl From<&LitFixedVec> for LitVec {
+    #[inline]
+    fn from(lits: &LitFixedVec) -> Self {
+        Self::from(lits.as_slice())
+    }
+}
+
+impl From<LitFixedVec> for LitVec {
+    #[inline]
+    fn from(lits: LitFixedVec) -> Self {
+        Self::from(lits.as_slice())
+    }
+}
+
+impl Clone for LitFixedVec {
+    #[inline]
+    fn clone(&self) -> Self {
+        Self::from(self.as_slice())
+    }
+}
+
+impl Drop for LitFixedVec {
+    #[inline]
+    fn drop(&mut self) {
+        if let Some(data) = self.0 {
+            // SAFETY: this owner exclusively owns the malloc allocation; Lit
+            // has no destructor and no references outlive this owner.
+            unsafe { libc::free(data.as_ptr().cast()) };
+        }
+    }
+}
+
+impl Deref for LitFixedVec {
+    type Target = [Lit];
+
+    #[inline]
+    fn deref(&self) -> &[Lit] {
+        match self.0 {
+            // SAFETY: the initialized payload has len elements and remains
+            // alive for the lifetime of self.
+            Some(data) => unsafe {
+                slice::from_raw_parts(data.as_ptr().add(1).cast::<Lit>(), self.len() as usize)
+            },
+            None => &[],
+        }
+    }
+}
+
+impl DerefMut for LitFixedVec {
+    #[inline]
+    fn deref_mut(&mut self) -> &mut [Lit] {
+        match self.0 {
+            // SAFETY: as above, with exclusive access to the allocation.
+            Some(data) => unsafe {
+                slice::from_raw_parts_mut(data.as_ptr().add(1).cast::<Lit>(), self.len() as usize)
+            },
+            None => &mut [],
+        }
+    }
+}
+
+impl AsRef<[Lit]> for LitFixedVec {
+    #[inline]
+    fn as_ref(&self) -> &[Lit] {
+        self
+    }
+}
+
+impl<'a> IntoIterator for &'a LitFixedVec {
+    type Item = &'a Lit;
+    type IntoIter = slice::Iter<'a, Lit>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl PartialEq for LitFixedVec {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.as_slice() == other.as_slice()
+    }
+}
+
+impl Eq for LitFixedVec {}
+
+impl Not for &LitFixedVec {
+    type Output = LitVec;
+
+    #[inline]
+    fn not(self) -> LitVec {
+        self.map(|lit| !lit)
+    }
+}
+
+impl std::hash::Hash for LitFixedVec {
+    #[inline]
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::hash::Hash::hash(self.as_slice(), state);
+    }
+}
+
+impl Debug for LitFixedVec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.as_slice().fmt(f)
+    }
+}
+
+impl Display for LitFixedVec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Debug::fmt(self, f)
+    }
+}
+
+impl Serialize for LitFixedVec {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("LitVec", 1)?;
+        state.serialize_field("lits", self.as_slice())?;
+        state.end()
+    }
+}
+
+impl<'de> Deserialize<'de> for LitFixedVec {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        LitVec::deserialize(deserializer).map(Self::from)
+    }
+}
 
 #[derive(Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LitVec {

@@ -1,7 +1,7 @@
 use super::DagCnf;
 use crate::{
-    LitMap, LitOrdVec, LitVec, LitVvec, Var, VarAssign, VarRange, lemmas_subsume_simplify,
-    occur::Occurs,
+    LitFixedVec, LitMap, LitOrdVec, LitVec, LitVvec, Var, VarAssign, VarRange,
+    lemmas_subsume_simplify, occur::Occurs,
 };
 use giputils::{allocator::Gallocator, hash::GHashSet, heap::BinaryHeap, ptr::Grc};
 use log::debug;
@@ -31,7 +31,7 @@ impl DagCnfSimplify {
         )
     }
 
-    /// Move clause buffers out of the DAG and release its dependency lists
+    /// Consume clauses one relation at a time and release dependency lists
     /// before allocating the simplifier's occurrence lists.
     pub fn from_owned(mut dagcnf: DagCnf) -> Self {
         let num_ocls = dagcnf.num_clause();
@@ -43,7 +43,11 @@ impl DagCnfSimplify {
         )
     }
 
-    fn from_rels(max_var: Var, num_ocls: usize, rels: impl IntoIterator<Item = LitVvec>) -> Self {
+    fn from_rels(
+        max_var: Var,
+        num_ocls: usize,
+        rels: impl IntoIterator<Item = LitVvec<LitFixedVec>>,
+    ) -> Self {
         let cdb = Grc::new(Gallocator::new());
         let cnf = LitMap::new_with(max_var);
         let value = VarAssign::new_with(max_var);
@@ -58,7 +62,8 @@ impl DagCnfSimplify {
             time: Duration::default(),
         };
         for (v, rel) in VarRange::new_inclusive(Var::CONST, max_var).zip(rels) {
-            for mut cls in rel {
+            for cls in rel {
+                let mut cls = LitVec::from(cls);
                 cls.sort();
                 cls.dedup();
                 assert!(cls.last().var().eq(&v));

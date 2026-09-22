@@ -6,8 +6,8 @@ use std::{
 };
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct LitVvec {
-    vec: Vec<LitVec>,
+pub struct LitVvec<T = LitVec> {
+    vec: Vec<T>,
 }
 
 impl LitVvec {
@@ -94,8 +94,8 @@ impl LitVvec {
     }
 }
 
-impl Deref for LitVvec {
-    type Target = Vec<LitVec>;
+impl<T> Deref for LitVvec<T> {
+    type Target = Vec<T>;
 
     #[inline]
     fn deref(&self) -> &Self::Target {
@@ -103,16 +103,16 @@ impl Deref for LitVvec {
     }
 }
 
-impl DerefMut for LitVvec {
+impl<T> DerefMut for LitVvec<T> {
     #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.vec
     }
 }
 
-impl IntoIterator for LitVvec {
-    type Item = LitVec;
-    type IntoIter = vec::IntoIter<LitVec>;
+impl<T> IntoIterator for LitVvec<T> {
+    type Item = T;
+    type IntoIter = vec::IntoIter<T>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -120,9 +120,9 @@ impl IntoIterator for LitVvec {
     }
 }
 
-impl<'a> IntoIterator for &'a LitVvec {
-    type Item = &'a LitVec;
-    type IntoIter = slice::Iter<'a, LitVec>;
+impl<'a, T> IntoIterator for &'a LitVvec<T> {
+    type Item = &'a T;
+    type IntoIter = slice::Iter<'a, T>;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
@@ -130,11 +130,17 @@ impl<'a> IntoIterator for &'a LitVvec {
     }
 }
 
-impl FromIterator<LitVec> for LitVvec {
+impl<T> FromIterator<T> for LitVvec<T> {
     #[inline]
-    fn from_iter<T: IntoIterator<Item = LitVec>>(iter: T) -> Self {
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
         Self {
             vec: Vec::from_iter(iter),
         }
+    }
+}
+
+impl<T> From<Vec<T>> for LitVvec<T> {
+    fn from(vec: Vec<T>) -> Self {
+        Self { vec }
     }
 }
