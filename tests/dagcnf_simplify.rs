@@ -1,4 +1,7 @@
-use logicrs::{DagCnf, Lit, LitVec, Var, simplify::DagCnfSimplify};
+use logicrs::{
+    DagCnf, Lit, LitVec, Var,
+    simplify::{BveObjective, DagCnfSimplify},
+};
 use std::collections::BTreeSet;
 
 // Existentially quantify unfrozen variables and compare the truth tables over
@@ -111,4 +114,103 @@ fn simplifier_propagates_constants_with_fixed_clauses() {
     );
     assert_eq!(expected.len(), 2);
     assert!(simplified[Var::CONST][0].as_slice() == [Lit::TRUE]);
+}
+
+#[test]
+fn bve_objectives_choose_differently_when_only_literals_grow() {
+    let mut dag = DagCnf::new();
+    let inputs: Vec<_> = (0..5).map(|_| dag.new_var().lit()).collect();
+    let shared = dag.new_and(inputs[..3].iter().copied());
+    let left = dag.new_or([shared, inputs[3]]);
+    let right = dag.new_or([shared, inputs[4]]);
+    let frozen: Vec<_> = inputs
+        .iter()
+        .map(|l| l.var())
+        .chain([left.var(), right.var()])
+        .collect();
+    let expected = projected_models(&dag, &frozen);
+    let before_lits: usize = dag.clause().map(|c| c.len() as usize).sum();
+    let before_clauses = dag.num_clause();
+    for objective in [BveObjective::Clauses, BveObjective::Literals] {
+        let mut simp = DagCnfSimplify::new(&dag);
+        for &v in &frozen {
+            simp.froze(v);
+        }
+        // Eliminating the shared AND preserves the clause count, but duplicates
+        // its inputs into both outputs and increases the total literal count.
+        simp.bve_simplify_with_objective(objective);
+        let result = simp.finalize();
+        let after_lits: usize = result.clause().map(|c| c.len() as usize).sum();
+        assert_eq!(result.num_clause(), before_clauses);
+        match objective {
+            BveObjective::Clauses => {
+                assert!(result[shared.var()].is_empty());
+                assert!(after_lits > before_lits);
+            }
+            BveObjective::Literals => {
+                assert!(!result[shared.var()].is_empty());
+                assert_eq!(after_lits, before_lits);
+            }
+        }
+        assert_eq!(projected_models(&result, &frozen), expected);
+    }
+}
+
+#[test]
+fn bve_preserves_projected_models_on_generated_gate_networks() {
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
+    let mut rng = StdRng::seed_from_u64(0xb0e_u64);
+    for case in 0..128 {
+        let mut dag = DagCnf::new();
+        let mut lits: Vec<_> = (0..3).map(|_| dag.new_var().lit()).collect();
+        for _ in 0..5 {
+            let a = lits[rng.random_range(0..lits.len())].not_if(rng.random());
+            let b = lits[rng.random_range(0..lits.len())].not_if(rng.random());
+            let c = lits[rng.random_range(0..lits.len())].not_if(rng.random());
+            let gate = match rng.random_range(0..4) {
+                0 => dag.new_and([a, b, c]),
+                1 => dag.new_or([a, b, c]),
+                2 => dag.new_xor(a, b),
+                _ => dag.new_ite(a, b, c),
+            };
+            lits.push(gate);
+        }
+        let frozen: Vec<_> = lits[..3]
+            .iter()
+            .chain(&lits[6..])
+            .map(|l| l.var())
+            .collect();
+        let expected = projected_models(&dag, &frozen);
+        for objective in [BveObjective::Clauses, BveObjective::Literals] {
+            let mut simp = DagCnfSimplify::new(&dag);
+            for &v in &frozen {
+                simp.froze(v);
+            }
+            simp.const_simplify();
+            let before = simp.finalize();
+            simp.bve_simplify_with_objective(objective);
+            let result = simp.finalize();
+            assert_eq!(
+                projected_models(&result, &frozen),
+                expected,
+                "BVE {objective:?} case {case}"
+            );
+            let cost = |cnf: &DagCnf| match objective {
+                BveObjective::Clauses => cnf.num_clause(),
+                BveObjective::Literals => cnf.clause().map(|c| c.len() as usize).sum(),
+            };
+            assert!(
+                cost(&result) <= cost(&before),
+                "{objective:?} growth in case {case}"
+            );
+            let result = dag
+                .clone()
+                .simplify_with_objective(frozen.iter().copied(), objective);
+            assert_eq!(
+                projected_models(&result, &frozen),
+                expected,
+                "full {objective:?} case {case}"
+            );
+        }
+    }
 }
