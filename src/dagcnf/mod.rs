@@ -16,7 +16,7 @@ use std::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DagCnf {
     max_var: Var,
-    cnf: VarMap<LitVvec<LitFixedVec>>,
+    cnf: VarMap<Vec<LitFixedVec>>,
     dep: VarMap<Box<[Var]>>,
 }
 
@@ -82,7 +82,7 @@ impl DagCnf {
     /// the stack footprint of the struct itself is not included.
     pub fn mem_usage(&self) -> usize {
         let mut bytes = 0usize;
-        bytes += self.cnf.capacity() * std::mem::size_of::<LitVvec<LitFixedVec>>();
+        bytes += self.cnf.capacity() * std::mem::size_of::<Vec<LitFixedVec>>();
         for lv in self.cnf.iter() {
             bytes += lv.capacity() * std::mem::size_of::<LitFixedVec>();
             for cls in lv.iter() {
@@ -97,7 +97,7 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn clause(&self) -> Flatten<slice::Iter<'_, LitVvec<LitFixedVec>>> {
+    pub fn clause(&self) -> Flatten<slice::Iter<'_, Vec<LitFixedVec>>> {
         self.cnf.iter().flatten()
     }
 
@@ -131,7 +131,7 @@ impl DagCnf {
     }
 
     #[inline]
-    pub fn iter(&self) -> Zip<VarRange, std::slice::Iter<'_, LitVvec<LitFixedVec>>> {
+    pub fn iter(&self) -> Zip<VarRange, std::slice::Iter<'_, Vec<LitFixedVec>>> {
         VarRange::new_inclusive(Var::CONST, self.max_var).zip(self.cnf.iter())
     }
 
@@ -160,7 +160,7 @@ impl DagCnf {
             assert!(r.last().var() == n);
         }
         self.dep[n] = deps(n, &rel);
-        self.cnf[n] = rel.into();
+        self.cnf[n] = rel;
     }
 
     #[inline]
@@ -430,7 +430,7 @@ impl DagCnf {
 impl Default for DagCnf {
     fn default() -> Self {
         let max_var = Var::CONST;
-        let mut cnf: VarMap<LitVvec<LitFixedVec>> = VarMap::new_with(max_var);
+        let mut cnf: VarMap<Vec<LitFixedVec>> = VarMap::new_with(max_var);
         cnf[max_var].push(LitFixedVec::from([Lit::TRUE]));
         Self {
             max_var,

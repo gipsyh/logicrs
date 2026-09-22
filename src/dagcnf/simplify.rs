@@ -46,7 +46,7 @@ impl DagCnfSimplify {
     fn from_rels(
         max_var: Var,
         num_ocls: usize,
-        rels: impl IntoIterator<Item = LitVvec<LitFixedVec>>,
+        rels: impl IntoIterator<Item = Vec<LitFixedVec>>,
     ) -> Self {
         let cdb = Grc::new(Gallocator::new());
         let cnf = LitMap::new_with(max_var);

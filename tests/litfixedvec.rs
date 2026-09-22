@@ -1,4 +1,4 @@
-use logicrs::{DagCnf, Lit, LitFixedVec, LitVec, LitVvec, Var};
+use logicrs::{DagCnf, LitFixedVec, LitVec, Var};
 
 #[test]
 fn fixed_literals_own_their_allocation() {
