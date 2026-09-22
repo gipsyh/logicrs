@@ -92,6 +92,11 @@ impl LitVvec {
             .map(|l| l.into_litvec())
             .collect();
     }
+
+    #[inline]
+    pub fn num_lit(&self) -> usize {
+        self.iter().map(|l| l.len()).sum()
+    }
 }
 
 impl Deref for LitVvec {
