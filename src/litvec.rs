@@ -17,9 +17,10 @@ union FixedLitData {
     lit: Lit,
 }
 
-/// A fixed-length, owned literal slice. The handle is one pointer; each nonempty
-/// allocation contains a u32 length followed immediately by the literals.
-/// Empty slices do not allocate. Allocation and deallocation use malloc/free.
+/// An owned literal slice that can shrink but cannot grow. The handle is one
+/// pointer; each nonempty allocation starts with a u32 logical length.
+/// Shrinking retains the allocation unless the slice becomes empty.
+/// Allocation and deallocation use malloc/free.
 #[derive(Default)]
 pub struct LitFixedVec(Option<NonNull<FixedLitData>>);
 
@@ -55,7 +56,75 @@ impl LitFixedVec {
         self
     }
 
-    /// Requested allocation size, excluding allocator bookkeeping/rounding.
+    /// Shorten the logical slice without reallocating. Truncating to zero
+    /// releases the allocation; requesting a larger length has no effect.
+    #[inline]
+    pub fn truncate(&mut self, len: u32) {
+        if len >= self.len() {
+            return;
+        }
+        if len == 0 {
+            *self = Self::new();
+        } else if let Some(mut data) = self.0 {
+            // SAFETY: the allocation is exclusively owned, and the new length
+            // only exposes a prefix of the previously initialized literals.
+            unsafe { data.as_mut().len = len };
+        }
+    }
+
+    /// Remove consecutive duplicates in place, retaining the allocation.
+    #[inline]
+    pub fn dedup(&mut self) {
+        let len = self.len() as usize;
+        if len < 2 {
+            return;
+        }
+        let mut kept = 1;
+        for i in 1..len {
+            if self[i] != self[kept - 1] {
+                self[kept] = self[i];
+                kept += 1;
+            }
+        }
+        self.truncate(kept as u32);
+    }
+
+    /// Retain matching literals in order, without allocating another buffer.
+    #[inline]
+    pub fn retain(&mut self, mut f: impl FnMut(&Lit) -> bool) {
+        let mut kept = 0;
+        for i in 0..self.len() as usize {
+            if f(&self[i]) {
+                self[kept] = self[i];
+                kept += 1;
+            }
+        }
+        self.truncate(kept as u32);
+    }
+
+    /// Simplify sorted literals in place. Return None for a satisfied or
+    /// tautological clause, and an empty slice for a falsified clause.
+    #[inline]
+    pub fn ordered_simp(mut self, v: &VarAssign) -> Option<Self> {
+        let len = ordered_simp_in_place(&mut self, v)?;
+        self.truncate(len as u32);
+        Some(self)
+    }
+
+    #[inline]
+    pub fn ordered_subsume_execpt_one(&self, cube: &Self) -> (bool, Option<Lit>) {
+        ordered_subsume_except_one_slice(self, cube)
+    }
+
+    /// Build a sorted resolvent in a growable vector, without copying either
+    /// source clause. Return None if the resolvent is tautological.
+    #[inline]
+    pub fn ordered_resolvent(&self, other: &Self, v: Var) -> Option<LitVec> {
+        ordered_resolvent_slice(self, other, v)
+    }
+
+    /// Bytes occupied by the header and live literals. This is a lower bound on
+    /// heap usage: it excludes space retained after shrinking and allocator overhead.
     pub fn mem_usage(&self) -> usize {
         if self.is_empty() {
             0
@@ -269,27 +338,7 @@ impl LitVec {
     /// Returns `None` for a satisfied or tautological clause.
     #[inline]
     pub fn ordered_simp(mut self, v: &VarAssign) -> Option<Self> {
-        debug_assert!(self.is_sorted());
-        let mut len = 0;
-        for i in 0..self.len() {
-            let lit = self[i];
-            let lv = v.v(lit);
-            if lv.is_true() {
-                return None;
-            } else if lv.is_false() {
-                continue;
-            }
-            if len > 0 {
-                let last = self[len - 1];
-                if lit == last {
-                    continue;
-                } else if lit == !last {
-                    return None;
-                }
-            }
-            self[len] = lit;
-            len += 1;
-        }
+        let len = ordered_simp_in_place(&mut self, v)?;
         self.truncate(len);
         Some(self)
     }
@@ -352,29 +401,7 @@ impl LitVec {
 
     #[inline]
     pub fn ordered_subsume_execpt_one(&self, cube: &LitVec) -> (bool, Option<Lit>) {
-        debug_assert!(self.is_sorted());
-        debug_assert!(cube.is_sorted());
-        let mut diff = None;
-        if self.len() > cube.len() {
-            return (false, None);
-        }
-        let mut j = 0;
-        for i in 0..self.len() {
-            while j < cube.len() && self[i].var() > cube[j].var() {
-                j += 1;
-            }
-            if j == cube.len() {
-                return (false, None);
-            }
-            if self[i] != cube[j] {
-                if diff.is_none() && self[i].var() == cube[j].var() {
-                    diff = Some(self[i]);
-                } else {
-                    return (false, None);
-                }
-            }
-        }
-        (diff.is_none(), diff)
+        ordered_subsume_except_one_slice(self, cube)
     }
 
     #[inline]
@@ -441,34 +468,7 @@ impl LitVec {
     /// The caller checks that the clauses contain opposite pivot literals.
     #[inline]
     pub fn ordered_resolvent(&self, other: &LitVec, v: Var) -> Option<LitVec> {
-        debug_assert!(self.is_sorted());
-        debug_assert!(other.is_sorted());
-        let mut new = LitVec::new_with_cap(self.len() + other.len());
-        let (mut i, mut j) = (0, 0);
-        while i < self.len() || j < other.len() {
-            let lit = if i < self.len() && (j == other.len() || self[i] <= other[j]) {
-                let lit = self[i];
-                i += 1;
-                lit
-            } else {
-                let lit = other[j];
-                j += 1;
-                lit
-            };
-            if lit.var() == v {
-                continue;
-            }
-            if let Some(&last) = new.lits.last() {
-                if lit == last {
-                    continue;
-                }
-                if lit == !last {
-                    return None;
-                }
-            }
-            new.push(lit);
-        }
-        Some(new)
+        ordered_resolvent_slice(self, other, v)
     }
 
     #[inline]
@@ -686,4 +686,89 @@ impl Debug for LitVec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.lits.fmt(f)
     }
+}
+
+#[inline]
+fn ordered_simp_in_place(lits: &mut [Lit], v: &VarAssign) -> Option<usize> {
+    debug_assert!(lits.is_sorted());
+    let mut len = 0;
+    for i in 0..lits.len() {
+        let lit = lits[i];
+        let lv = v.v(lit);
+        if lv.is_true() {
+            return None;
+        } else if lv.is_false() {
+            continue;
+        }
+        if len > 0 {
+            let last = lits[len - 1];
+            if lit == last {
+                continue;
+            } else if lit == !last {
+                return None;
+            }
+        }
+        lits[len] = lit;
+        len += 1;
+    }
+    Some(len)
+}
+
+#[inline]
+fn ordered_subsume_except_one_slice(lits: &[Lit], cube: &[Lit]) -> (bool, Option<Lit>) {
+    debug_assert!(lits.is_sorted());
+    debug_assert!(cube.is_sorted());
+    let mut diff = None;
+    if lits.len() > cube.len() {
+        return (false, None);
+    }
+    let mut j = 0;
+    for &lit in lits {
+        while j < cube.len() && lit.var() > cube[j].var() {
+            j += 1;
+        }
+        if j == cube.len() {
+            return (false, None);
+        }
+        if lit != cube[j] {
+            if diff.is_none() && lit.var() == cube[j].var() {
+                diff = Some(lit);
+            } else {
+                return (false, None);
+            }
+        }
+    }
+    (diff.is_none(), diff)
+}
+
+#[inline]
+fn ordered_resolvent_slice(lits: &[Lit], other: &[Lit], v: Var) -> Option<LitVec> {
+    debug_assert!(lits.is_sorted());
+    debug_assert!(other.is_sorted());
+    let mut new = LitVec::new_with_cap(lits.len() + other.len());
+    let (mut i, mut j) = (0, 0);
+    while i < lits.len() || j < other.len() {
+        let lit = if i < lits.len() && (j == other.len() || lits[i] <= other[j]) {
+            let lit = lits[i];
+            i += 1;
+            lit
+        } else {
+            let lit = other[j];
+            j += 1;
+            lit
+        };
+        if lit.var() == v {
+            continue;
+        }
+        if let Some(&last) = new.lits.last() {
+            if lit == last {
+                continue;
+            }
+            if lit == !last {
+                return None;
+            }
+        }
+        new.push(lit);
+    }
+    Some(new)
 }

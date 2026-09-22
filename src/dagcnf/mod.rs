@@ -79,7 +79,8 @@ impl DagCnf {
     /// Estimate the heap memory (in bytes) held by this `DagCnf`, based on the
     /// allocated capacities of the underlying vectors. This covers `cnf` (the
     /// per-variable clause lists) and `dep` (the per-variable dependency lists);
-    /// the stack footprint of the struct itself is not included.
+    /// the stack footprint of the struct itself is not included. Literal
+    /// buffers shortened in place may retain additional uncounted space.
     pub fn mem_usage(&self) -> usize {
         let mut bytes = 0usize;
         bytes += self.cnf.capacity() * std::mem::size_of::<Vec<LitFixedVec>>();

@@ -1,7 +1,7 @@
 use super::DagCnf;
 use crate::{
-    LitFixedVec, LitMap, LitOrdVec, LitVec, LitVvec, Var, VarAssign, VarRange,
-    lemmas_subsume_simplify, occur::Occurs,
+    LitFixedVec, LitMap, LitOrdVec, LitVvec, Var, VarAssign, VarRange, lemmas_subsume_simplify,
+    occur::Occurs,
 };
 use giputils::{allocator::Gallocator, hash::GHashSet, heap::BinaryHeap, ptr::Grc};
 use log::debug;
@@ -11,11 +11,14 @@ use std::{
 };
 
 pub struct DagCnfSimplify {
-    cdb: Grc<Gallocator<LitVec>>,
+    cdb: Grc<Gallocator<LitFixedVec>>,
     max_var: Var,
     cnf: LitMap<Vec<usize>>,
     #[allow(clippy::type_complexity)]
-    occur: Option<(Grc<Occurs<LitVec>>, BinaryHeap<Var, Occurs<LitVec>>)>,
+    occur: Option<(
+        Grc<Occurs<LitFixedVec>>,
+        BinaryHeap<Var, Occurs<LitFixedVec>>,
+    )>,
     frozen: GHashSet<Var>,
     value: VarAssign,
     num_ocls: usize,
@@ -62,8 +65,7 @@ impl DagCnfSimplify {
             time: Duration::default(),
         };
         for (v, rel) in VarRange::new_inclusive(Var::CONST, max_var).zip(rels) {
-            for cls in rel {
-                let mut cls = LitVec::from(cls);
+            for mut cls in rel {
                 cls.sort();
                 cls.dedup();
                 assert!(cls.last().var().eq(&v));
@@ -104,7 +106,7 @@ impl DagCnfSimplify {
         self.frozen.insert(v);
     }
 
-    fn add_rel(&mut self, rel: LitVec) {
+    fn add_rel(&mut self, rel: LitFixedVec) {
         let Some(rel) = rel.ordered_simp(&self.value) else {
             return;
         };
@@ -128,7 +130,7 @@ impl DagCnfSimplify {
 
     fn dealloc_rel(&mut self, cls: usize) {
         self.cdb.dealloc(cls);
-        self.cdb[cls] = LitVec::new();
+        self.cdb[cls] = LitFixedVec::new();
     }
 
     #[allow(unused)]
@@ -196,7 +198,7 @@ impl DagCnfSimplify {
                 }
             }
             self.cdb.dealloc(cls);
-            self.cdb[cls] = LitVec::new();
+            self.cdb[cls] = LitFixedVec::new();
         }
         self.cnf[ln] = Vec::new();
         self.cnf[!ln] = Vec::new();
@@ -267,7 +269,7 @@ impl DagCnfSimplify {
         self.remove_rels(opos);
         self.remove_node(v);
         for r in res {
-            self.add_rel(r);
+            self.add_rel(r.into());
         }
     }
 
@@ -316,19 +318,14 @@ impl DagCnfSimplify {
                         self.dealloc_rel(cj);
                         return;
                     }
-                    let mut cube = self.cdb[ci].clone();
-                    cube.retain(|l| *l != diff);
-                    self.cdb[ci] = cube;
+                    self.cdb[ci].retain(|l| *l != diff);
                     self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
                     self.dealloc_rel(cj);
                 } else if diff.var() == self.cdb[cj].last().var() {
                     self.cnf[self.cdb[cj].last()].retain(|&c| c != cj);
                     self.dealloc_rel(cj);
                 } else {
-                    let mut cube = self.cdb[cj].clone();
-                    assert!(cube.last() == self.cdb[cj].last());
-                    cube.retain(|l| *l != !diff);
-                    self.cdb[cj] = cube;
+                    self.cdb[cj].retain(|l| *l != !diff);
                 }
             }
         }
@@ -384,7 +381,7 @@ impl DagCnfSimplify {
             if !vv.is_none() {
                 self.remove_node(v);
                 if self.frozen.contains(&v) {
-                    self.add_rel(LitVec::from(ln.not_if(vv.is_false())));
+                    self.add_rel(LitFixedVec::from([ln.not_if(vv.is_false())]));
                 }
             }
         }
@@ -400,7 +397,7 @@ impl DagCnfSimplify {
         let mut dagcnf = DagCnf::new();
         dagcnf.new_var_to(self.max_var);
         for v in VarRange::new_inclusive(Var(1), self.max_var) {
-            let mut cnf: LitVvec = self.cnf[v.lit()]
+            let mut cnf: Vec<LitFixedVec> = self.cnf[v.lit()]
                 .iter()
                 .chain(self.cnf[!v.lit()].iter())
                 .map(|&cls| {
@@ -416,7 +413,7 @@ impl DagCnfSimplify {
                 && let Some(vl) = self.value.vl(v)
             {
                 cnf.clear();
-                cnf.push(LitVec::from(vl));
+                cnf.push(LitFixedVec::from([vl]));
             }
             dagcnf.add_rel_owned(v, cnf);
             if consume {
