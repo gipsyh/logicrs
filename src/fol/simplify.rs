@@ -2151,6 +2151,12 @@ impl RewriteRule for SliceOfBitwiseOp {
     }
 }
 
+/// `slice(neg(x), 0, h) -> neg(slice(x, 0, h))`.
+///
+/// Only sound for `l == 0`: `neg(x) = not(x) + 1`, so bit `i` of `neg(x)` depends on
+/// `x[0..i)` through the carry chain, and `slice(neg(x), l, h)` for `l > 0` cannot be
+/// expressed as `neg(slice(x, l, h))` (e.g. `x = 0b11`: `neg(x)[1] = 0` but
+/// `neg(x[1]) = 1`).
 struct SliceOfNeg;
 impl RewriteRule for SliceOfNeg {
     fn opt_level(&self) -> OptLevel {
@@ -2161,6 +2167,9 @@ impl RewriteRule for SliceOfNeg {
         let s = &terms[0];
         let l = terms[2].bv_len();
         let h = terms[1].bv_len();
+        if l != 0 {
+            return None;
+        }
         let sop = s.try_op()?;
         match sop.op {
             Neg => Some(sop[0].slice(l, h).op0(Neg)),
