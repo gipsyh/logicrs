@@ -386,6 +386,66 @@ fn test_simplify_low_bit_arith_shift_patterns() {
 }
 
 #[test]
+fn test_simplify_slice_of_neg() {
+    let ctx = SimplifyCtx::new(OptLevel::O3);
+    let x = Term::new_var(Sort::Bv(8));
+    let neg_x = x.op0(FolOp::Neg);
+
+    // slice starting at the lsb may be pushed through the negation
+    let mut map = GHashMap::new();
+    assert_eq!(
+        neg_x.slice(0, 3).simplify_with_ctx(&ctx, &mut map),
+        x.slice(0, 3).op0(FolOp::Neg)
+    );
+
+    // but not a slice starting above the lsb: bit l of neg(x) depends on x[0..l)
+    let mut map = GHashMap::new();
+    assert_eq!(
+        neg_x.slice(1, 1).simplify_with_ctx(&ctx, &mut map),
+        neg_x.slice(1, 1)
+    );
+    let mut map = GHashMap::new();
+    assert_eq!(
+        neg_x.slice(2, 5).simplify_with_ctx(&ctx, &mut map),
+        neg_x.slice(2, 5)
+    );
+}
+
+#[test]
+fn test_simplify_slice_of_neg_preserves_semantics() {
+    let ctx = SimplifyCtx::new(OptLevel::O3);
+    let w = 4;
+    let x = Term::new_var(Sort::Bv(w));
+    let neg_x = x.op0(FolOp::Neg);
+    for l in 0..w {
+        for h in l..w {
+            let orig = neg_x.slice(l, h);
+            let mut map = GHashMap::new();
+            let simp = orig.simplify_with_ctx(&ctx, &mut map);
+            for v in 0..(1usize << w) {
+                let bits: String = (0..w)
+                    .rev()
+                    .map(|i| if (v >> i) & 1 == 1 { '1' } else { '0' })
+                    .collect();
+                let mut val = GHashMap::new();
+                val.insert(x.clone(), bv_val(&bits));
+                let expected = orig.simulate(&mut val);
+                let mut val = GHashMap::new();
+                val.insert(x.clone(), bv_val(&bits));
+                let got = simp.simulate(&mut val);
+                assert_eq!(
+                    got.as_bv().unwrap(),
+                    expected.as_bv().unwrap(),
+                    "slice(neg(x), {l}, {h}) with x = {bits}: expected {}, got {}",
+                    expected.as_bv().unwrap(),
+                    got.as_bv().unwrap()
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn test_simplify_nonnegative_slt_bound() {
     let x = Term::new_var(Sort::Bv(6));
     let zx = Term::bv_const(BitVec::zero(2)).concat(&x);
