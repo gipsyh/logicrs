@@ -112,27 +112,47 @@ pub fn slt_simulate(terms: &[Value]) -> Value {
     Value::Bv(LboolVec::from_elem(res, 1))
 }
 
+/// Shift amount of `y` saturated at `width`: any value >= `width` (including values that do not
+/// fit in a `usize`) maps to `width`. Returns `None` if a bit of `y` is X.
+fn shift_amount(y: &LboolVec, width: usize) -> Option<usize> {
+    let mut amt = 0usize;
+    for (i, bit) in y.iter().enumerate() {
+        if bit.is_none() {
+            return None;
+        }
+        if bit.is_true() {
+            if i >= usize::BITS as usize {
+                return Some(width);
+            }
+            amt |= 1 << i;
+        }
+    }
+    Some(amt.min(width))
+}
+
+/// Rotation amount of `y` reduced modulo `width`, computed over the bit string so that it cannot
+/// overflow. Returns `None` if a bit of `y` is X.
+fn rotate_amount(y: &LboolVec, width: usize) -> Option<usize> {
+    let mut amt = 0usize;
+    let mut pow = 1 % width; // 2^i mod width
+    for bit in y.iter() {
+        if bit.is_none() {
+            return None;
+        }
+        if bit.is_true() {
+            amt = (amt + pow) % width;
+        }
+        pow = (pow * 2) % width;
+    }
+    Some(amt)
+}
+
 pub fn sll_simulate(terms: &[Value]) -> Value {
     let x = terms[0].as_bv().unwrap();
     let y = terms[1].as_bv().unwrap();
     let width = x.len();
 
-    // Convert shift amount to usize if possible
-    let mut shift_amt: Option<usize> = Some(0);
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            shift_amt = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut s) = shift_amt
-        {
-            *s |= 1 << i;
-        }
-    }
-
-    match shift_amt {
-        Some(s) if s >= width => Value::Bv(LboolVec::from_elem(Lbool::FALSE, width)),
+    match shift_amount(y, width) {
         Some(s) => {
             let mut res = LboolVec::from_elem(Lbool::FALSE, width);
             for i in s..width {
@@ -149,21 +169,7 @@ pub fn srl_simulate(terms: &[Value]) -> Value {
     let y = terms[1].as_bv().unwrap();
     let width = x.len();
 
-    let mut shift_amt: Option<usize> = Some(0);
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            shift_amt = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut s) = shift_amt
-        {
-            *s |= 1 << i;
-        }
-    }
-
-    match shift_amt {
-        Some(s) if s >= width => Value::Bv(LboolVec::from_elem(Lbool::FALSE, width)),
+    match shift_amount(y, width) {
         Some(s) => {
             let mut res = LboolVec::from_elem(Lbool::FALSE, width);
             for i in 0..width - s {
@@ -181,21 +187,7 @@ pub fn sra_simulate(terms: &[Value]) -> Value {
     let width = x.len();
     let sign = x.get(width - 1);
 
-    let mut shift_amt: Option<usize> = Some(0);
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            shift_amt = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut s) = shift_amt
-        {
-            *s |= 1 << i;
-        }
-    }
-
-    match shift_amt {
-        Some(s) if s >= width => Value::Bv(LboolVec::from_elem(sign, width)),
+    match shift_amount(y, width) {
         Some(s) => {
             let mut res = LboolVec::from_elem(sign, width);
             for i in 0..width - s {
@@ -216,22 +208,8 @@ pub fn rol_simulate(terms: &[Value]) -> Value {
         return Value::Bv(x.clone());
     }
 
-    let mut rot_amt: Option<usize> = Some(0);
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            rot_amt = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut r) = rot_amt
-        {
-            *r |= 1 << i;
-        }
-    }
-
-    match rot_amt {
+    match rotate_amount(y, width) {
         Some(r) => {
-            let r = r % width;
             let mut res = LboolVec::from_elem(Lbool::NONE, width);
             for i in 0..width {
                 res.set((i + r) % width, x.get(i));
@@ -251,22 +229,8 @@ pub fn ror_simulate(terms: &[Value]) -> Value {
         return Value::Bv(x.clone());
     }
 
-    let mut rot_amt: Option<usize> = Some(0);
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            rot_amt = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut r) = rot_amt
-        {
-            *r |= 1 << i;
-        }
-    }
-
-    match rot_amt {
+    match rotate_amount(y, width) {
         Some(r) => {
-            let r = r % width;
             let mut res = LboolVec::from_elem(Lbool::NONE, width);
             for i in 0..width {
                 res.set(i, x.get((i + r) % width));
