@@ -194,13 +194,21 @@ use FolOp::*;
 
 /// Build `op(terms)` as a stored node without running `FolOp::simplify` (unlike `Term::new_op`).
 fn raw(op: FolOp, terms: Vec<Term>) -> Term {
-    assert!(op.is_core(), "{op:?} is not a core op; use Term::new_op (normalize)");
+    assert!(
+        op.is_core(),
+        "{op:?} is not a core op; use Term::new_op (normalize)"
+    );
     // the harness must only ever build well-typed terms; this guards the generators
     let w = |i: usize| terms[i].sort();
     match op {
         And | Or | Xor | Add | Mul | Udiv | Urem | Sdiv | Srem | Smod | Sll | Srl | Sra | Rol
         | Ror | Eq | Ult | Slt => {
-            assert!(w(0) == w(1), "{op:?}: operand sorts differ: {:?} vs {:?}", w(0), w(1))
+            assert!(
+                w(0) == w(1),
+                "{op:?}: operand sorts differ: {:?} vs {:?}",
+                w(0),
+                w(1)
+            )
         }
         Ite => assert!(
             w(0) == Sort::Bv(1) && w(1) == w(2),
@@ -209,7 +217,9 @@ fn raw(op: FolOp, terms: Vec<Term>) -> Term {
             w(1),
             w(2)
         ),
-        Slice => assert!(terms[2].bv_len() <= terms[1].bv_len() && terms[1].bv_len() < terms[0].bv_len()),
+        Slice => {
+            assert!(terms[2].bv_len() <= terms[1].bv_len() && terms[1].bv_len() < terms[0].bv_len())
+        }
         Read => assert!(w(0).array().0 == w(1).bv()),
         Write => assert!(w(0).array() == (w(1).bv(), w(2).bv())),
         _ => {}
@@ -275,7 +285,11 @@ fn sext(x: &Term, e: usize) -> Term {
 }
 /// `slice(x, l..=h)` (inclusive, `h >= l`)
 fn sl(x: &Term, l: usize, h: usize) -> Term {
-    assert!(l <= h && h < x.bv_len(), "slice {l}..={h} of a {}-bit term", x.bv_len());
+    assert!(
+        l <= h && h < x.bv_len(),
+        "slice {l}..={h} of a {}-bit term",
+        x.bv_len()
+    );
     raw(Slice, vec![x.clone(), dummy(h), dummy(l)])
 }
 fn bit(x: &Term, i: usize) -> Term {
@@ -492,7 +506,10 @@ fn show_value(v: &Value) -> String {
         Value::Array(a) => {
             let mut idx: Vec<_> = a.keys().copied().collect();
             idx.sort();
-            let parts: Vec<String> = idx.iter().map(|i| format!("[{i}]={}", show_lbv(&a[i]))).collect();
+            let parts: Vec<String> = idx
+                .iter()
+                .map(|i| format!("[{i}]={}", show_lbv(&a[i])))
+                .collect();
             format!("{{{}}}", parts.join(" "))
         }
     }
@@ -632,7 +649,10 @@ struct Cfg {
 }
 
 fn env_num(name: &str, default: u64) -> u64 {
-    std::env::var(name).ok().and_then(|v| v.parse().ok()).unwrap_or(default)
+    std::env::var(name)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(default)
 }
 
 impl Cfg {
@@ -682,7 +702,11 @@ impl Finding {
     }
     fn render(&self, n: usize, btor: Option<&str>) -> String {
         let mut s = String::new();
-        let _ = writeln!(s, "#{n} {:?} case={} level={:?}", self.kind, self.case, self.level);
+        let _ = writeln!(
+            s,
+            "#{n} {:?} case={} level={:?}",
+            self.kind, self.case, self.level
+        );
         let _ = writeln!(s, "  orig : {:?}", self.orig);
         if let Some(sp) = &self.simp {
             let _ = writeln!(s, "  simp : {sp:?}");
@@ -770,7 +794,11 @@ impl GenericGen<'_> {
             }
             1 => {
                 let a = self.bv(w, d);
-                if self.rng.chance(1, 2) { not(&a) } else { neg(&a) }
+                if self.rng.chance(1, 2) {
+                    not(&a)
+                } else {
+                    neg(&a)
+                }
             }
             2 => {
                 let c = self.bv(1, d);
@@ -816,7 +844,11 @@ impl GenericGen<'_> {
                     const OPS: [FolOp; 3] = [Redxor, Redand, Redor];
                     let op = OPS[self.rng.below(OPS.len())];
                     let a = self.bv(u, d);
-                    return if op.is_core() { raw(op, vec![a]) } else { Term::new_op(op, [a]) };
+                    return if op.is_core() {
+                        raw(op, vec![a])
+                    } else {
+                        Term::new_op(op, [a])
+                    };
                 }
                 const OPS: [FolOp; 13] = [
                     Eq, Ult, Slt, Neq, Ugt, Ulte, Ugte, Sgt, Slte, Sgte, Iff, Implies, Udivo,
@@ -826,7 +858,11 @@ impl GenericGen<'_> {
                 let u = if op == Implies { 1 } else { u };
                 let a = self.bv(u, d);
                 let b = self.bv(u, d);
-                if op.is_core() { raw(op, vec![a, b]) } else { Term::new_op(op, [a, b]) }
+                if op.is_core() {
+                    raw(op, vec![a, b])
+                } else {
+                    Term::new_op(op, [a, b])
+                }
             }
             _ => unreachable!(),
         }
@@ -839,9 +875,17 @@ fn generic_case(rng: &mut Rng, w: usize, k: usize) -> Case {
     let bools: Vec<Term> = (0..2).map(|_| boolvar()).collect();
     let depth = rng.range(2, 4);
     let out_w = if rng.chance(1, 3) { 1 } else { w };
-    let mut g = GenericGen { rng, w, vars, bools };
+    let mut g = GenericGen {
+        rng,
+        w,
+        vars,
+        bools,
+    };
     let orig = g.bv(out_w, depth);
-    Case { name: format!("generic/w{w}/{k}/d{depth}"), orig }
+    Case {
+        name: format!("generic/w{w}/{k}/d{depth}"),
+        orig,
+    }
 }
 
 /// Random nest of Write / Ite / Read over one array variable.
@@ -867,7 +911,11 @@ fn generic_array_case(rng: &mut Rng, w: usize, k: usize) -> Case {
             2 => {
                 let r = rd(&a, &i);
                 let v = vals[rng.below(2)].clone();
-                if rng.chance(1, 2) { ite(&c, &r, &v) } else { ite(&c, &v, &r) }
+                if rng.chance(1, 2) {
+                    ite(&c, &r, &v)
+                } else {
+                    ite(&c, &v, &r)
+                }
             }
             _ => vals[rng.below(2)].clone(),
         };
@@ -884,7 +932,10 @@ fn generic_array_case(rng: &mut Rng, w: usize, k: usize) -> Case {
     } else {
         t
     };
-    Case { name: format!("generic-array/w{w}/{k}"), orig }
+    Case {
+        name: format!("generic-array/w{w}/{k}"),
+        orig,
+    }
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -942,7 +993,10 @@ fn gen_not_bool_xor_eq_swap(c: &mut Ctx) -> Variants {
 
 fn gen_not_ite_const(c: &mut Ctx) -> Variants {
     let (b, x, k1, k2) = (boolvar(), c.v(), c.k(), c.k());
-    vec![("consts", not(&ite(&b, &k1, &k2))), ("near-one-const", not(&ite(&b, &k1, &x)))]
+    vec![
+        ("consts", not(&ite(&b, &k1, &k2))),
+        ("near-one-const", not(&ite(&b, &k1, &x))),
+    ]
 }
 
 fn gen_and_const_propagation(c: &mut Ctx) -> Variants {
@@ -1000,7 +1054,10 @@ fn gen_and_merge_nested_ands(c: &mut Ctx) -> Variants {
 
 fn gen_and_demorgan_not_not(c: &mut Ctx) -> Variants {
     let (x, y) = (c.v(), c.v());
-    vec![("notx-noty", and(&not(&x), &not(&y))), ("near-notx-y", and(&not(&x), &y))]
+    vec![
+        ("notx-noty", and(&not(&x), &not(&y))),
+        ("near-notx-y", and(&not(&x), &y)),
+    ]
 }
 
 fn gen_and_absorb_complement_in_or(c: &mut Ctx) -> Variants {
@@ -1047,9 +1104,15 @@ fn gen_and_merge_adjacent_eq_slice_consts(c: &mut Ctx) -> Variants {
     ];
     if w >= 3 {
         let (g1, g2) = (c.kw(1), c.kw(w - 2));
-        v.push(("near-gap", and(&eq(&sl(&x, 0, 0), &g1), &eq(&sl(&x, 2, w - 1), &g2))));
+        v.push((
+            "near-gap",
+            and(&eq(&sl(&x, 0, 0), &g1), &eq(&sl(&x, 2, w - 1), &g2)),
+        ));
         let (o1, o2) = (c.kw(2), c.kw(w - 1));
-        v.push(("near-overlap", and(&eq(&sl(&x, 0, 1), &o1), &eq(&sl(&x, 1, w - 1), &o2))));
+        v.push((
+            "near-overlap",
+            and(&eq(&sl(&x, 0, 1), &o1), &eq(&sl(&x, 1, w - 1), &o2)),
+        ));
     }
     v
 }
@@ -1067,8 +1130,14 @@ fn gen_and_bit_level_eq_reconstruction(c: &mut Ctx) -> Variants {
         ("near-other-base", and(&bit(&x, 0), &bit(&y, 1))),
     ];
     if w >= 3 {
-        v.push(("nested-3", and(&and(&bit(&x, 2), &bit(&x, 0)), &lit(&x, 1, false))));
-        v.push(("conflict", and(&and(&bit(&x, 0), &bit(&x, 2)), &not(&bit(&x, 0)))));
+        v.push((
+            "nested-3",
+            and(&and(&bit(&x, 2), &bit(&x, 0)), &lit(&x, 1, false)),
+        ));
+        v.push((
+            "conflict",
+            and(&and(&bit(&x, 0), &bit(&x, 2)), &not(&bit(&x, 0))),
+        ));
         v.push(("near-gap", and(&bit(&x, 0), &bit(&x, 2))));
     }
     v
@@ -1095,8 +1164,14 @@ fn gen_and_bit_level_masked_eq_reconstruction(c: &mut Ctx) -> Variants {
         ("near-7-gap", lit_chain(c, And, &x, &[8, 0, 1, 2, 3, 4, 5])),
     ];
     if w >= 16 {
-        v.push(("8-sparse", lit_chain(c, And, &x, &[0, 2, 4, 6, 8, 10, 12, 14])));
-        v.push(("9-sparse", lit_chain(c, And, &x, &[0, 2, 4, 6, 8, 10, 12, 14, 15])));
+        v.push((
+            "8-sparse",
+            lit_chain(c, And, &x, &[0, 2, 4, 6, 8, 10, 12, 14]),
+        ));
+        v.push((
+            "9-sparse",
+            lit_chain(c, And, &x, &[0, 2, 4, 6, 8, 10, 12, 14, 15]),
+        ));
     }
     v
 }
@@ -1140,7 +1215,10 @@ fn gen_or_merge_nested_ors(c: &mut Ctx) -> Variants {
 
 fn gen_or_demorgan_not_not(c: &mut Ctx) -> Variants {
     let (x, y) = (c.v(), c.v());
-    vec![("notx-noty", or(&not(&x), &not(&y))), ("near-notx-y", or(&not(&x), &y))]
+    vec![
+        ("notx-noty", or(&not(&x), &not(&y))),
+        ("near-notx-y", or(&not(&x), &y)),
+    ]
 }
 
 fn gen_or_absorb_complement_in_and(c: &mut Ctx) -> Variants {
@@ -1205,7 +1283,11 @@ fn gen_or_merge_eq_const_one_bit_diff(c: &mut Ctx) -> Variants {
         let c1 = random_bv(c.rng, w);
         let c2 = &c1 ^ &bv_bit(w, d);
         let (t1, t2) = (Term::bv_const(c1.clone()), Term::bv_const(c2));
-        let names = [("diff-lsb", "diff-lsb-const-first"), ("diff-msb", "diff-msb-const-first"), ("diff-mid", "diff-mid-const-first")];
+        let names = [
+            ("diff-lsb", "diff-lsb-const-first"),
+            ("diff-msb", "diff-msb-const-first"),
+            ("diff-mid", "diff-mid-const-first"),
+        ];
         v.push((names[n].0, or(&eq(&x, &t1), &eq(&x, &t2))));
         v.push((names[n].1, or(&eq(&t1, &x), &eq(&x, &t2))));
         if n == 0 {
@@ -1215,7 +1297,10 @@ fn gen_or_merge_eq_const_one_bit_diff(c: &mut Ctx) -> Variants {
     if w >= 2 {
         let c1 = random_bv(c.rng, w);
         let c2 = &(&c1 ^ &bv_bit(w, 0)) ^ &bv_bit(w, w - 1);
-        v.push(("near-two-bits", or(&eq(&x, &Term::bv_const(c1)), &eq(&x, &Term::bv_const(c2)))));
+        v.push((
+            "near-two-bits",
+            or(&eq(&x, &Term::bv_const(c1)), &eq(&x, &Term::bv_const(c2))),
+        ));
     }
     v
 }
@@ -1226,12 +1311,21 @@ fn gen_or_merge_eq_const_one_bit_diff_assoc(c: &mut Ctx) -> Variants {
     let c2 = &c1 ^ &bv_bit(w, c.rng.below(w));
     let (t1, t2, k) = (Term::bv_const(c1.clone()), Term::bv_const(c2), c.k());
     let mut v = vec![
-        ("left-nested", or(&or(&eq(&x, &t1), &eq(&y, &k)), &eq(&x, &t2))),
-        ("right-nested", or(&eq(&x, &t1), &or(&eq(&y, &k), &eq(&x, &t2)))),
+        (
+            "left-nested",
+            or(&or(&eq(&x, &t1), &eq(&y, &k)), &eq(&x, &t2)),
+        ),
+        (
+            "right-nested",
+            or(&eq(&x, &t1), &or(&eq(&y, &k), &eq(&x, &t2))),
+        ),
     ];
     if w >= 2 {
         let c3 = &(&c1 ^ &bv_bit(w, 0)) ^ &bv_bit(w, w - 1);
-        v.push(("near-two-bits", or(&or(&eq(&x, &t1), &eq(&y, &k)), &eq(&x, &Term::bv_const(c3)))));
+        v.push((
+            "near-two-bits",
+            or(&or(&eq(&x, &t1), &eq(&y, &k)), &eq(&x, &Term::bv_const(c3))),
+        ));
     }
     v
 }
@@ -1249,8 +1343,14 @@ fn gen_or_bit_level_clause_reconstruction(c: &mut Ctx) -> Variants {
         ("near-other-base", or(&bit(&x, 0), &bit(&y, 1))),
     ];
     if w >= 3 {
-        v.push(("nested-3", or(&or(&bit(&x, 2), &bit(&x, 0)), &lit(&x, 1, false))));
-        v.push(("conflict", or(&or(&bit(&x, 0), &bit(&x, 2)), &not(&bit(&x, 0)))));
+        v.push((
+            "nested-3",
+            or(&or(&bit(&x, 2), &bit(&x, 0)), &lit(&x, 1, false)),
+        ));
+        v.push((
+            "conflict",
+            or(&or(&bit(&x, 0), &bit(&x, 2)), &not(&bit(&x, 0))),
+        ));
         v.push(("near-gap", or(&bit(&x, 0), &bit(&x, 2))));
     }
     v
@@ -1267,8 +1367,14 @@ fn gen_or_bit_level_masked_clause_reconstruction(c: &mut Ctx) -> Variants {
         ("near-7-gap", lit_chain(c, Or, &x, &[8, 0, 1, 2, 3, 4, 5])),
     ];
     if w >= 16 {
-        v.push(("8-sparse", lit_chain(c, Or, &x, &[0, 2, 4, 6, 8, 10, 12, 14])));
-        v.push(("9-sparse", lit_chain(c, Or, &x, &[0, 2, 4, 6, 8, 10, 12, 14, 15])));
+        v.push((
+            "8-sparse",
+            lit_chain(c, Or, &x, &[0, 2, 4, 6, 8, 10, 12, 14]),
+        ));
+        v.push((
+            "9-sparse",
+            lit_chain(c, Or, &x, &[0, 2, 4, 6, 8, 10, 12, 14, 15]),
+        ));
     }
     v
 }
@@ -1380,7 +1486,10 @@ fn gen_eq_and_const(c: &mut Ctx) -> Variants {
 
 fn gen_ult_const_x(c: &mut Ctx) -> Variants {
     let (y, w) = (c.v(), c.w);
-    let mut v = vec![("zero-y", ult(&bv_zero(w), &y)), ("ones-y", ult(&bv_ones(w), &y))];
+    let mut v = vec![
+        ("zero-y", ult(&bv_zero(w), &y)),
+        ("ones-y", ult(&bv_ones(w), &y)),
+    ];
     if w > 1 {
         v.push(("near-mid", ult(&c.k_mid(), &y)));
     }
@@ -1389,7 +1498,10 @@ fn gen_ult_const_x(c: &mut Ctx) -> Variants {
 
 fn gen_ult_const_y(c: &mut Ctx) -> Variants {
     let (x, w) = (c.v(), c.w);
-    let mut v = vec![("x-zero", ult(&x, &bv_zero(w))), ("x-ones", ult(&x, &bv_ones(w)))];
+    let mut v = vec![
+        ("x-zero", ult(&x, &bv_zero(w))),
+        ("x-ones", ult(&x, &bv_ones(w))),
+    ];
     if w > 1 {
         v.push(("near-mid", ult(&x, &c.k_mid())));
     }
@@ -1431,7 +1543,10 @@ fn gen_slt_refl(c: &mut Ctx) -> Variants {
 
 fn gen_slt_const_x(c: &mut Ctx) -> Variants {
     let (y, w) = (c.v(), c.w);
-    let mut v = vec![("min-y", slt(&bv_min(w), &y)), ("max-y", slt(&bv_max(w), &y))];
+    let mut v = vec![
+        ("min-y", slt(&bv_min(w), &y)),
+        ("max-y", slt(&bv_max(w), &y)),
+    ];
     if w > 1 {
         v.push(("near-mid", slt(&c.k_mid(), &y)));
     }
@@ -1440,7 +1555,10 @@ fn gen_slt_const_x(c: &mut Ctx) -> Variants {
 
 fn gen_slt_const_y(c: &mut Ctx) -> Variants {
     let (x, w) = (c.v(), c.w);
-    let mut v = vec![("x-min", slt(&x, &bv_min(w))), ("x-max", slt(&x, &bv_max(w)))];
+    let mut v = vec![
+        ("x-min", slt(&x, &bv_min(w))),
+        ("x-max", slt(&x, &bv_max(w))),
+    ];
     if w > 1 {
         v.push(("near-mid", slt(&x, &c.k_mid())));
     }
@@ -1456,7 +1574,10 @@ fn gen_slt_nonnegative_bound(c: &mut Ctx) -> Variants {
     let lo = w - hi;
     let xs = var(lo);
     let zx = cat(&bv_zero(hi), &xs);
-    let mut v = vec![("zero-bound", slt(&zx, &bv_zero(w))), ("neg-bound", slt(&zx, &bv_min(w)))];
+    let mut v = vec![
+        ("zero-bound", slt(&zx, &bv_zero(w))),
+        ("neg-bound", slt(&zx, &bv_min(w))),
+    ];
     let mut negk = random_bv(c.rng, w);
     negk.set(w - 1, true);
     v.push(("neg-random-bound", slt(&zx, &Term::bv_const(negk))));
@@ -1471,8 +1592,14 @@ fn gen_slt_nonnegative_bound(c: &mut Ctx) -> Variants {
     for i in lo..w {
         below.set(i, false);
     }
-    v.push(("near-bound-within-range", slt(&zx, &Term::bv_const(below.clone()))));
-    v.push(("near-ones-prefix", slt(&cat(&bv_ones(hi), &xs), &bv_zero(w))));
+    v.push((
+        "near-bound-within-range",
+        slt(&zx, &Term::bv_const(below.clone())),
+    ));
+    v.push((
+        "near-ones-prefix",
+        slt(&cat(&bv_ones(hi), &xs), &bv_zero(w)),
+    ));
     if w >= 3 && hi >= 2 {
         // sext(concat(0, xs), e) is still non-negative
         let e = 1;
@@ -1483,7 +1610,10 @@ fn gen_slt_nonnegative_bound(c: &mut Ctx) -> Variants {
         if w - 2 >= lo {
             k.set(w - 2, true);
         }
-        v.push(("sext-bound-above", slt(&sext(&inner, e), &Term::bv_const(k))));
+        v.push((
+            "sext-bound-above",
+            slt(&sext(&inner, e), &Term::bv_const(k)),
+        ));
     }
     v
 }
@@ -1517,7 +1647,10 @@ fn gen_ite_not_branches(c: &mut Ctx) -> Variants {
 
 fn gen_ite_bool_complement_branches(_c: &mut Ctx) -> Variants {
     let (b, d) = (boolvar(), boolvar());
-    vec![("d-notd", ite(&b, &d, &not(&d))), ("notd-d", ite(&b, &not(&d), &d))]
+    vec![
+        ("d-notd", ite(&b, &d, &not(&d))),
+        ("notd-d", ite(&b, &not(&d), &d)),
+    ]
 }
 
 fn gen_ite_bool_branch_const(_c: &mut Ctx) -> Variants {
@@ -1556,11 +1689,26 @@ fn gen_ite_write_branches(c: &mut Ctx) -> Variants {
     let r = rd(&a, &i);
     vec![
         ("two-writes", ite(&b, &wr(&a, &i, &v1), &wr(&a, &i, &v2))),
-        ("then-write-ite-read-else", ite(&b, &wr(&a, &i, &ite(&b, &v1, &r)), &a)),
-        ("then-write-ite-read-then", ite(&b, &wr(&a, &i, &ite(&b, &r, &v1)), &a)),
-        ("else-write-ite-read-then", ite(&b, &a, &wr(&a, &i, &ite(&b, &r, &v1)))),
-        ("else-write-ite-read-else", ite(&b, &a, &wr(&a, &i, &ite(&b, &v1, &r)))),
-        ("near-two-writes-diff-index", ite(&b, &wr(&a, &i, &v1), &wr(&a, &j, &v2))),
+        (
+            "then-write-ite-read-else",
+            ite(&b, &wr(&a, &i, &ite(&b, &v1, &r)), &a),
+        ),
+        (
+            "then-write-ite-read-then",
+            ite(&b, &wr(&a, &i, &ite(&b, &r, &v1)), &a),
+        ),
+        (
+            "else-write-ite-read-then",
+            ite(&b, &a, &wr(&a, &i, &ite(&b, &r, &v1))),
+        ),
+        (
+            "else-write-ite-read-else",
+            ite(&b, &a, &wr(&a, &i, &ite(&b, &v1, &r))),
+        ),
+        (
+            "near-two-writes-diff-index",
+            ite(&b, &wr(&a, &i, &v1), &wr(&a, &j, &v2)),
+        ),
     ]
 }
 
@@ -1579,7 +1727,10 @@ fn gen_concat_assoc_const_prefix(c: &mut Ctx) -> Variants {
 
 fn gen_concat_sign_ext_by_slice(c: &mut Ctx) -> Variants {
     let (x, y, w) = (c.v(), c.v(), c.w);
-    let mut v = vec![("msb-y", cat(&bit(&y, w - 1), &y)), ("near-other-var", cat(&bit(&x, w - 1), &y))];
+    let mut v = vec![
+        ("msb-y", cat(&bit(&y, w - 1), &y)),
+        ("near-other-var", cat(&bit(&x, w - 1), &y)),
+    ];
     if w >= 2 {
         v.push(("near-not-msb", cat(&bit(&y, w - 2), &y)));
     }
@@ -1730,7 +1881,10 @@ fn gen_slice_lsb_of_sll(c: &mut Ctx) -> Variants {
 
 fn gen_add_by_zero(c: &mut Ctx) -> Variants {
     let (x, w) = (c.v(), c.w);
-    vec![("zero-x", add(&bv_zero(w), &x)), ("x-zero", add(&x, &bv_zero(w)))]
+    vec![
+        ("zero-x", add(&bv_zero(w), &x)),
+        ("x-zero", add(&x, &bv_zero(w))),
+    ]
 }
 
 fn gen_neg_bool(c: &mut Ctx) -> Variants {
@@ -1744,12 +1898,18 @@ fn gen_neg_bool(c: &mut Ctx) -> Variants {
 
 fn gen_mul_by_zero(c: &mut Ctx) -> Variants {
     let (x, w) = (c.v(), c.w);
-    vec![("zero-x", mul(&bv_zero(w), &x)), ("x-zero", mul(&x, &bv_zero(w)))]
+    vec![
+        ("zero-x", mul(&bv_zero(w), &x)),
+        ("x-zero", mul(&x, &bv_zero(w))),
+    ]
 }
 
 fn gen_mul_by_one(c: &mut Ctx) -> Variants {
     let (x, w) = (c.v(), c.w);
-    vec![("one-x", mul(&bv_one(w), &x)), ("x-one", mul(&x, &bv_one(w)))]
+    vec![
+        ("one-x", mul(&bv_one(w), &x)),
+        ("x-one", mul(&x, &bv_one(w))),
+    ]
 }
 
 fn gen_read_over_write_same_index(c: &mut Ctx) -> Variants {
@@ -1789,9 +1949,18 @@ const TARGETED: &[(&str, Gen)] = &[
     ("AndDeMorganNotNot", gen_and_demorgan_not_not),
     ("AndAbsorbComplementInOr", gen_and_absorb_complement_in_or),
     ("AndDistributeOverOr", gen_and_distribute_over_or),
-    ("AndMergeAdjacentEqSliceConsts", gen_and_merge_adjacent_eq_slice_consts),
-    ("AndBitLevelEqReconstruction", gen_and_bit_level_eq_reconstruction),
-    ("AndBitLevelMaskedEqReconstruction", gen_and_bit_level_masked_eq_reconstruction),
+    (
+        "AndMergeAdjacentEqSliceConsts",
+        gen_and_merge_adjacent_eq_slice_consts,
+    ),
+    (
+        "AndBitLevelEqReconstruction",
+        gen_and_bit_level_eq_reconstruction,
+    ),
+    (
+        "AndBitLevelMaskedEqReconstruction",
+        gen_and_bit_level_masked_eq_reconstruction,
+    ),
     ("OrConstPropagation", gen_or_const_propagation),
     ("OrComplement", gen_or_complement),
     ("OrMergeNestedOrs", gen_or_merge_nested_ors),
@@ -1800,10 +1969,22 @@ const TARGETED: &[(&str, Gen)] = &[
     ("OrAbsorbIteCond", gen_or_absorb_ite_cond),
     ("OrMergeIteZeroBranches", gen_or_merge_ite_zero_branches),
     ("OrDistributeOverAnd", gen_or_distribute_over_and),
-    ("OrMergeEqConstOneBitDiff", gen_or_merge_eq_const_one_bit_diff),
-    ("OrMergeEqConstOneBitDiffAssoc", gen_or_merge_eq_const_one_bit_diff_assoc),
-    ("OrBitLevelClauseReconstruction", gen_or_bit_level_clause_reconstruction),
-    ("OrBitLevelMaskedClauseReconstruction", gen_or_bit_level_masked_clause_reconstruction),
+    (
+        "OrMergeEqConstOneBitDiff",
+        gen_or_merge_eq_const_one_bit_diff,
+    ),
+    (
+        "OrMergeEqConstOneBitDiffAssoc",
+        gen_or_merge_eq_const_one_bit_diff_assoc,
+    ),
+    (
+        "OrBitLevelClauseReconstruction",
+        gen_or_bit_level_clause_reconstruction,
+    ),
+    (
+        "OrBitLevelMaskedClauseReconstruction",
+        gen_or_bit_level_masked_clause_reconstruction,
+    ),
     ("XorConstPropagation", gen_xor_const_propagation),
     ("XorSelf", gen_xor_self),
     ("XorComplement", gen_xor_complement),
@@ -1825,7 +2006,10 @@ const TARGETED: &[(&str, Gen)] = &[
     ("IteSameBranches", gen_ite_same_branches),
     ("IteNotCondSwap", gen_ite_not_cond_swap),
     ("IteNotBranches", gen_ite_not_branches),
-    ("IteBoolComplementBranches", gen_ite_bool_complement_branches),
+    (
+        "IteBoolComplementBranches",
+        gen_ite_bool_complement_branches,
+    ),
     ("IteBoolBranchConst", gen_ite_bool_branch_const),
     ("IteSameCondNested", gen_ite_same_cond_nested),
     ("IteNestedSharedBranch", gen_ite_nested_shared_branch),
@@ -1833,7 +2017,10 @@ const TARGETED: &[(&str, Gen)] = &[
     ("ConcatConst", gen_concat_const),
     ("ConcatAssocConstPrefix", gen_concat_assoc_const_prefix),
     ("ConcatSignExtBySlice", gen_concat_sign_ext_by_slice),
-    ("ConcatSignExtBySextSlice", gen_concat_sign_ext_by_sext_slice),
+    (
+        "ConcatSignExtBySextSlice",
+        gen_concat_sign_ext_by_sext_slice,
+    ),
     ("ConcatSignExtByMsbTerm", gen_concat_sign_ext_by_msb_term),
     ("SextZeroExt", gen_sext_zero_ext),
     ("SextBoolToIte", gen_sext_bool_to_ite),
@@ -1853,7 +2040,10 @@ const TARGETED: &[(&str, Gen)] = &[
     ("MulByOne", gen_mul_by_one),
     ("ReadOverWriteSameIndex", gen_read_over_write_same_index),
     ("WriteSameValue", gen_write_same_value),
-    ("WriteConditionalSameValue", gen_write_conditional_same_value),
+    (
+        "WriteConditionalSameValue",
+        gen_write_conditional_same_value,
+    ),
 ];
 
 // ------------------------------------------------------------------------------------------------
@@ -1910,7 +2100,12 @@ fn const_cases(rng: &mut Rng, w: usize, out: &mut Vec<Case>) {
         let (n, c) = &pool[rng.below(pool.len())];
         (n.to_string(), Term::bv_const(c.clone()))
     };
-    let mut push = |name: String, t: Term| out.push(Case { name: format!("const/w{w}/{name}"), orig: t });
+    let mut push = |name: String, t: Term| {
+        out.push(Case {
+            name: format!("const/w{w}/{name}"),
+            orig: t,
+        })
+    };
 
     const BIN: [FolOp; 18] = [
         And, Or, Xor, Sll, Srl, Sra, Rol, Ror, Add, Mul, Udiv, Urem, Sdiv, Srem, Smod, Eq, Ult, Slt,
@@ -1925,7 +2120,10 @@ fn const_cases(rng: &mut Rng, w: usize, out: &mut Vec<Case>) {
             if expensive && !matches!(*bn, "zero" | "bit64" | "rand") {
                 continue;
             }
-            push(format!("{op}/{an}-{bn}"), r2(op, &a, &Term::bv_const(b.clone())));
+            push(
+                format!("{op}/{an}-{bn}"),
+                r2(op, &a, &Term::bv_const(b.clone())),
+            );
         }
         let (cn, c) = pick(rng, &pool);
         push(format!("{op}/{cn}-{cn}"), r2(op, &c, &c));
@@ -1937,8 +2135,14 @@ fn const_cases(rng: &mut Rng, w: usize, out: &mut Vec<Case>) {
     }
     let (an, a) = pick(rng, &pool);
     let (bn, b) = pick(rng, &pool);
-    push(format!("Ite/1-{an}-{bn}"), ite(&Term::bool_const(true), &a, &b));
-    push(format!("Ite/0-{an}-{bn}"), ite(&Term::bool_const(false), &a, &b));
+    push(
+        format!("Ite/1-{an}-{bn}"),
+        ite(&Term::bool_const(true), &a, &b),
+    );
+    push(
+        format!("Ite/0-{an}-{bn}"),
+        ite(&Term::bool_const(false), &a, &b),
+    );
     let w2 = rng.range(1, w);
     let c2 = Term::bv_const(rng.bits(w2));
     push(format!("Concat/{an}-rand{w2}"), cat(&a, &c2));
@@ -1963,12 +2167,18 @@ fn const_cases(rng: &mut Rng, w: usize, out: &mut Vec<Case>) {
             (Term::new_op(op, [x.clone(), dummy(rng.range(1, 3))]), a, b)
         } else if op == Implies {
             let (p, q) = (var(1), var(1));
-            let (a, b) = (Term::bool_const(rng.chance(1, 2)), Term::bool_const(rng.chance(1, 2)));
+            let (a, b) = (
+                Term::bool_const(rng.chance(1, 2)),
+                Term::bool_const(rng.chance(1, 2)),
+            );
             let shape = Term::new_op(op, [p.clone(), q.clone()]);
             let mut m = GHashMap::new();
             m.insert(p, a);
             m.insert(q, b);
-            push(format!("{op}/bool"), raw_subst(&shape, &m, &mut GHashMap::new()));
+            push(
+                format!("{op}/bool"),
+                raw_subst(&shape, &m, &mut GHashMap::new()),
+            );
             continue;
         } else {
             (Term::new_op(op, [x.clone(), y.clone()]), a, b)
@@ -1976,14 +2186,20 @@ fn const_cases(rng: &mut Rng, w: usize, out: &mut Vec<Case>) {
         let mut map = GHashMap::new();
         map.insert(x.clone(), a);
         map.insert(y.clone(), b);
-        push(format!("{op}/{an}-{bn}"), raw_subst(&shape, &map, &mut GHashMap::new()));
+        push(
+            format!("{op}/{an}-{bn}"),
+            raw_subst(&shape, &map, &mut GHashMap::new()),
+        );
     }
     for op in [Inc, Dec, Redand, Redor] {
         let (an, a) = pick(rng, &pool);
         let shape = Term::new_op(op, [x.clone()]);
         let mut map = GHashMap::new();
         map.insert(x.clone(), a);
-        push(format!("{op}/{an}"), raw_subst(&shape, &map, &mut GHashMap::new()));
+        push(
+            format!("{op}/{an}"),
+            raw_subst(&shape, &map, &mut GHashMap::new()),
+        );
     }
 }
 
@@ -2003,7 +2219,9 @@ struct Stats {
 }
 
 fn simulate_bits(tv: &TermVec, val: &mut GHashMap<Term, Value>) -> Vec<Lbool> {
-    tv.iter().map(|t| t.simulate(val).into_bv().unwrap().get(0)).collect()
+    tv.iter()
+        .map(|t| t.simulate(val).into_bv().unwrap().get(0))
+        .collect()
 }
 
 fn check_case(
@@ -2018,7 +2236,12 @@ fn check_case(
     let orig = &case.orig;
     let vars = free_vars(orig);
     let mut findings = Vec::new();
-    let mk = |kind, level, simp: Option<Term>, fired: Vec<&'static str>, assignment: String, detail: String| Finding {
+    let mk = |kind,
+              level,
+              simp: Option<Term>,
+              fired: Vec<&'static str>,
+              assignment: String,
+              detail: String| Finding {
         kind,
         case: case.name.clone(),
         level,
@@ -2049,7 +2272,11 @@ fn check_case(
                 if let Some(s) = simps.iter_mut().find(|s| s.term == t) {
                     s.levels.push(lv);
                 } else {
-                    simps.push(Simp { term: t, levels: vec![lv], fired });
+                    simps.push(Simp {
+                        term: t,
+                        levels: vec![lv],
+                        fired,
+                    });
                 }
             }
         }
@@ -2078,7 +2305,13 @@ fn check_case(
         cfg.samples
     };
     let assigns: Vec<Assignment> = (0..n)
-        .map(|i| if exhaustive { exhaustive_assignment(&vars, i as u64) } else { random_assignment(rng, &vars) })
+        .map(|i| {
+            if exhaustive {
+                exhaustive_assignment(&vars, i as u64)
+            } else {
+                random_assignment(rng, &vars)
+            }
+        })
         .collect();
 
     // 3. word-level simulator oracle (not for all-constant terms: same code as the fold)
@@ -2091,7 +2324,14 @@ fn check_case(
             let vo = match guarded(|| orig.simulate(&mut val)) {
                 Ok(v) => v,
                 Err(m) => {
-                    findings.push(mk(Kind::OraclePanic, OptLevel::O0, None, vec![], show_assignment(a), format!("simulate(orig): {m}")));
+                    findings.push(mk(
+                        Kind::OraclePanic,
+                        OptLevel::O0,
+                        None,
+                        vec![],
+                        show_assignment(a),
+                        format!("simulate(orig): {m}"),
+                    ));
                     sim_ok = false;
                     break;
                 }
@@ -2104,7 +2344,14 @@ fn check_case(
                 match guarded(|| s.term.simulate(&mut val)) {
                     Err(m) => {
                         bad[k] = true;
-                        findings.push(mk(Kind::OraclePanic, s.levels[0], Some(s.term.clone()), s.fired.clone(), show_assignment(a), format!("simulate(simp): {m}")));
+                        findings.push(mk(
+                            Kind::OraclePanic,
+                            s.levels[0],
+                            Some(s.term.clone()),
+                            s.fired.clone(),
+                            show_assignment(a),
+                            format!("simulate(simp): {m}"),
+                        ));
                     }
                     Ok(vs) => {
                         if let Some(d) = cmp_value(&vo, &vs) {
@@ -2126,7 +2373,11 @@ fn check_case(
     }
 
     // 4. bit-level oracle
-    let cost = bitblast_cost(orig) + changed.iter().map(|s| bitblast_cost(&s.term)).sum::<usize>();
+    let cost = bitblast_cost(orig)
+        + changed
+            .iter()
+            .map(|s| bitblast_cost(&s.term))
+            .sum::<usize>();
     // all-constant terms fold gate by gate during bit-blasting (0.5 s for a 140-bit divider in
     // debug), so the bit-level oracle always runs for them
     let budget = if all_const {
@@ -2138,7 +2389,9 @@ fn check_case(
     };
     if cost > budget {
         if !sim_ok {
-            stats.unchecked.push(format!("{} (bit-blast cost {cost})", case.name));
+            stats
+                .unchecked
+                .push(format!("{} (bit-blast cost {cost})", case.name));
         }
         return findings;
     }
@@ -2146,7 +2399,14 @@ fn check_case(
     let bo = match guarded(|| orig.bitblast(&mut bb)) {
         Ok(b) => b,
         Err(m) => {
-            findings.push(mk(Kind::OraclePanic, OptLevel::O0, None, vec![], String::new(), format!("bitblast(orig): {m}")));
+            findings.push(mk(
+                Kind::OraclePanic,
+                OptLevel::O0,
+                None,
+                vec![],
+                String::new(),
+                format!("bitblast(orig): {m}"),
+            ));
             return findings;
         }
     };
@@ -2156,12 +2416,23 @@ fn check_case(
             Ok(b) => bs.push(Some(b)),
             Err(m) => {
                 bs.push(None);
-                findings.push(mk(Kind::OraclePanic, s.levels[0], Some(s.term.clone()), s.fired.clone(), String::new(), format!("bitblast(simp): {m}")));
+                findings.push(mk(
+                    Kind::OraclePanic,
+                    s.levels[0],
+                    Some(s.term.clone()),
+                    s.fired.clone(),
+                    String::new(),
+                    format!("bitblast(simp): {m}"),
+                ));
             }
         }
     }
     stats.bb_cases += 1;
-    let nb = if all_const { 1 } else { cfg.bb_samples.min(assigns.len()) };
+    let nb = if all_const {
+        1
+    } else {
+        cfg.bb_samples.min(assigns.len())
+    };
     let mut bad: Vec<bool> = vec![false; changed.len()];
     let mut agree_bad = false;
     for (k, a) in assigns.iter().take(nb).enumerate() {
@@ -2175,15 +2446,30 @@ fn check_case(
         let ob = match guarded(|| simulate_bits(&bo, &mut bval)) {
             Ok(b) => b,
             Err(m) => {
-                findings.push(mk(Kind::OraclePanic, OptLevel::O0, None, vec![], show_assignment(a), format!("simulate(bitblast(orig)): {m}")));
+                findings.push(mk(
+                    Kind::OraclePanic,
+                    OptLevel::O0,
+                    None,
+                    vec![],
+                    show_assignment(a),
+                    format!("simulate(bitblast(orig)): {m}"),
+                ));
                 return findings;
             }
         };
-        if !agree_bad && let Some(vo) = orig_vals.get(k)
+        if !agree_bad
+            && let Some(vo) = orig_vals.get(k)
             && let Some(d) = cmp_bits(&value_bits(vo, orig.sort()), &ob)
         {
             agree_bad = true;
-            findings.push(mk(Kind::BitblastSimMismatch, OptLevel::O0, None, vec![], show_assignment(a), format!("simulate(orig) != simulate(bitblast(orig)): {d}")));
+            findings.push(mk(
+                Kind::BitblastSimMismatch,
+                OptLevel::O0,
+                None,
+                vec![],
+                show_assignment(a),
+                format!("simulate(orig) != simulate(bitblast(orig)): {d}"),
+            ));
         }
         for (i, s) in changed.iter().enumerate() {
             if bad[i] {
@@ -2194,13 +2480,24 @@ fn check_case(
                 Ok(b) => b,
                 Err(m) => {
                     bad[i] = true;
-                    findings.push(mk(Kind::OraclePanic, s.levels[0], Some(s.term.clone()), s.fired.clone(), show_assignment(a), format!("simulate(bitblast(simp)): {m}")));
+                    findings.push(mk(
+                        Kind::OraclePanic,
+                        s.levels[0],
+                        Some(s.term.clone()),
+                        s.fired.clone(),
+                        show_assignment(a),
+                        format!("simulate(bitblast(simp)): {m}"),
+                    ));
                     continue;
                 }
             };
             if let Some(d) = cmp_bits(&ob, &got) {
                 bad[i] = true;
-                let kind = if sim_ok { Kind::BitblastRewriteMismatch } else { Kind::RewriteMismatch };
+                let kind = if sim_ok {
+                    Kind::BitblastRewriteMismatch
+                } else {
+                    Kind::RewriteMismatch
+                };
                 let exp: Vec<String> = ob.iter().rev().map(|l| l.to_string()).collect();
                 let gotv: Vec<String> = got.iter().rev().map(|l| l.to_string()).collect();
                 findings.push(mk(
@@ -2209,7 +2506,12 @@ fn check_case(
                     Some(s.term.clone()),
                     s.fired.clone(),
                     show_assignment(a),
-                    format!("bitblast(orig) != bitblast(simp) at levels {:?}: {d}; orig={} simp={}", s.levels, exp.join(""), gotv.join("")),
+                    format!(
+                        "bitblast(orig) != bitblast(simp) at levels {:?}: {d}; orig={} simp={}",
+                        s.levels,
+                        exp.join(""),
+                        gotv.join("")
+                    ),
                 ));
             }
         }
@@ -2219,10 +2521,17 @@ fn check_case(
 
 /// Replace a finding by the same kind of finding on its smallest failing sub-term, if any.
 fn shrink(f: &Finding, cfg: &Cfg, rng: &mut Rng) -> Finding {
-    let small = Cfg { samples: cfg.samples.min(64), bb_samples: 8, ..cfg.clone() };
+    let small = Cfg {
+        samples: cfg.samples.min(64),
+        bb_samples: 8,
+        ..cfg.clone()
+    };
     let all_const = f.case.starts_with("const/");
     for sub in sub_ops(&f.orig) {
-        let case = Case { name: format!("{}/sub{}", f.case, node_count(&sub)), orig: sub };
+        let case = Case {
+            name: format!("{}/sub{}", f.case, node_count(&sub)),
+            orig: sub,
+        };
         let mut cov = BTreeMap::new();
         let mut st = Stats::default();
         let fs = check_case(&case, &small, rng, &mut cov, &mut st, all_const);
@@ -2242,7 +2551,9 @@ fn gc_if_large() {
 fn out_dir() -> std::path::PathBuf {
     let d = match std::env::var("LOGICRS_AUDIT_OUT") {
         Ok(p) => std::path::PathBuf::from(p),
-        Err(_) => std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target").join("rewrite_audit"),
+        Err(_) => std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("rewrite_audit"),
     };
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -2276,7 +2587,11 @@ fn audit_main() {
     let mut cov: BTreeMap<&'static str, usize> = RULES.iter().map(|r| (*r, 0)).collect();
     let mut stats = Stats::default();
     let mut findings: Vec<Finding> = Vec::new();
-    let widths: Vec<usize> = EXHAUSTIVE_WIDTHS.iter().chain(RANDOM_WIDTHS).copied().collect();
+    let widths: Vec<usize> = EXHAUSTIVE_WIDTHS
+        .iter()
+        .chain(RANDOM_WIDTHS)
+        .copied()
+        .collect();
     let mut gen_panics: Vec<String> = Vec::new();
 
     // (i) targeted shapes, every rule, every width
@@ -2291,8 +2606,13 @@ fn audit_main() {
                 Err(m) => gen_panics.push(format!("{rule}/w{w}: construction panicked: {m}")),
                 Ok(vs) => {
                     for (tag, orig) in vs {
-                        let case = Case { name: format!("{rule}/w{w}/{tag}"), orig };
-                        findings.extend(check_case(&case, &cfg, &mut rng, &mut cov, &mut stats, false));
+                        let case = Case {
+                            name: format!("{rule}/w{w}/{tag}"),
+                            orig,
+                        };
+                        findings.extend(check_case(
+                            &case, &cfg, &mut rng, &mut cov, &mut stats, false,
+                        ));
                     }
                 }
             }
@@ -2321,7 +2641,11 @@ fn audit_main() {
         progress(&t0, &format!("generic w{w}"));
         // above 64 bits the word-level simulator is unusable (see the oracle-limitation class) and
         // the bit-level oracle is costly: half the budget there
-        let count = if w > 64 { cfg.generic_per_width / 2 } else { cfg.generic_per_width };
+        let count = if w > 64 {
+            cfg.generic_per_width / 2
+        } else {
+            cfg.generic_per_width
+        };
         for k in 0..count {
             let case = match guarded(|| generic_case(&mut rng, w, k)) {
                 Ok(c) => c,
@@ -2330,10 +2654,14 @@ fn audit_main() {
                     continue;
                 }
             };
-            findings.extend(check_case(&case, &cfg, &mut rng, &mut cov, &mut stats, false));
+            findings.extend(check_case(
+                &case, &cfg, &mut rng, &mut cov, &mut stats, false,
+            ));
             if k % 4 == 0 {
                 let case = generic_array_case(&mut rng, w, k);
-                findings.extend(check_case(&case, &cfg, &mut rng, &mut cov, &mut stats, false));
+                findings.extend(check_case(
+                    &case, &cfg, &mut rng, &mut cov, &mut stats, false,
+                ));
             }
             if k % 32 == 31 {
                 gc_if_large();
@@ -2350,14 +2678,21 @@ fn audit_main() {
             Kind::BitblastSimMismatch => "bitblast-vs-simulator",
             // a simplify panic raised inside the simulator / LboolVec is the constant folder
             // (`eval_const_op`), whatever rules fired before it exposed the constant operands
-            _ if f.fired.is_empty() || f.detail.contains("simulate.rs") || f.detail.contains("lbool.rs") => "const-fold",
+            _ if f.fired.is_empty()
+                || f.detail.contains("simulate.rs")
+                || f.detail.contains("lbool.rs") =>
+            {
+                "const-fold"
+            }
             _ => "rule",
         }
     }
     fn key_of(f: &Finding) -> String {
         let what = match f.kind {
             // strip the location suffix so the same assertion groups together
-            Kind::SimplifyPanic | Kind::OraclePanic => f.detail.split(" (").next().unwrap_or("").to_string(),
+            Kind::SimplifyPanic | Kind::OraclePanic => {
+                f.detail.split(" (").next().unwrap_or("").to_string()
+            }
             _ => String::new(),
         };
         let top = match &*f.orig {
@@ -2405,15 +2740,26 @@ fn audit_main() {
     let dir = out_dir();
     for e in std::fs::read_dir(&dir).unwrap().flatten() {
         let p = e.path();
-        if p.extension().is_some_and(|x| x == "btor") && p.file_stem().is_some_and(|n| n.to_string_lossy().chars().all(|c| c.is_ascii_digit())) {
+        if p.extension().is_some_and(|x| x == "btor")
+            && p.file_stem()
+                .is_some_and(|n| n.to_string_lossy().chars().all(|c| c.is_ascii_digit()))
+        {
             let _ = std::fs::remove_file(p);
         }
     }
     let mut report = String::new();
     let mut per_class: BTreeMap<&'static str, usize> = BTreeMap::new();
     let mut n = 0;
-    for class in ["rule", "const-fold", "bitblast-vs-simulator", "oracle-limitation"] {
-        let mine: Vec<_> = groups.iter().filter(|(_, (f, _))| class_of(f) == class).collect();
+    for class in [
+        "rule",
+        "const-fold",
+        "bitblast-vs-simulator",
+        "oracle-limitation",
+    ] {
+        let mine: Vec<_> = groups
+            .iter()
+            .filter(|(_, (f, _))| class_of(f) == class)
+            .collect();
         if mine.is_empty() {
             continue;
         }
@@ -2441,10 +2787,17 @@ fn audit_main() {
                 }
             };
             std::fs::write(&path, text).unwrap();
-            let _ = writeln!(report, "{}  ({count} occurrence(s) in this run)", small.render(n, Some(&path.display().to_string())));
+            let _ = writeln!(
+                report,
+                "{}  ({count} occurrence(s) in this run)",
+                small.render(n, Some(&path.display().to_string()))
+            );
         }
     }
-    let failing_groups: usize = ["rule", "const-fold", "bitblast-vs-simulator"].iter().map(|c| per_class.get(c).copied().unwrap_or(0)).sum();
+    let failing_groups: usize = ["rule", "const-fold", "bitblast-vs-simulator"]
+        .iter()
+        .map(|c| per_class.get(c).copied().unwrap_or(0))
+        .sum();
     let oracle_groups = per_class.get("oracle-limitation").copied().unwrap_or(0);
 
     // ---- coverage table ----
@@ -2453,15 +2806,25 @@ fn audit_main() {
     for r in RULES {
         let _ = writeln!(table, "{:<40} {:>8}", r, cov.get(r).copied().unwrap_or(0));
     }
-    let _ = writeln!(table, "{:<40} {:>8}  (class const-fold: all-constant cases folded to a constant / cases)", "const-fold", format!("{}/{}", stats.const_folded, stats.const_cases));
+    let _ = writeln!(
+        table,
+        "{:<40} {:>8}  (class const-fold: all-constant cases folded to a constant / cases)",
+        "const-fold",
+        format!("{}/{}", stats.const_folded, stats.const_cases)
+    );
     let unknown: Vec<&&str> = cov.keys().filter(|k| !RULES.contains(k)).collect();
     let missing: Vec<&&str> = RULES
         .iter()
-        .filter(|r| cov.get(*r).copied().unwrap_or(0) == 0 && !KNOWN_UNREACHABLE.iter().any(|(n, _)| n == *r))
+        .filter(|r| {
+            cov.get(*r).copied().unwrap_or(0) == 0
+                && !KNOWN_UNREACHABLE.iter().any(|(n, _)| n == *r)
+        })
         .collect();
     let stale: Vec<&&str> = RULES
         .iter()
-        .filter(|r| cov.get(*r).copied().unwrap_or(0) > 0 && KNOWN_UNREACHABLE.iter().any(|(n, _)| n == *r))
+        .filter(|r| {
+            cov.get(*r).copied().unwrap_or(0) > 0 && KNOWN_UNREACHABLE.iter().any(|(n, _)| n == *r)
+        })
         .collect();
 
     let summary = format!(
@@ -2489,12 +2852,21 @@ fn audit_main() {
         gen_panics.len()
     );
     let mut full = String::new();
-    let _ = writeln!(full, "== rewrite audit ==\n{summary}\n\n== coverage ==\n{table}");
+    let _ = writeln!(
+        full,
+        "== rewrite audit ==\n{summary}\n\n== coverage ==\n{table}"
+    );
     if !unknown.is_empty() {
-        let _ = writeln!(full, "rules fired but not in RULES (update the list): {unknown:?}");
+        let _ = writeln!(
+            full,
+            "rules fired but not in RULES (update the list): {unknown:?}"
+        );
     }
     if !missing.is_empty() {
-        let _ = writeln!(full, "rules with 0 hits (not in KNOWN_UNREACHABLE): {missing:?}");
+        let _ = writeln!(
+            full,
+            "rules with 0 hits (not in KNOWN_UNREACHABLE): {missing:?}"
+        );
     }
     if !stale.is_empty() {
         let _ = writeln!(full, "rules in KNOWN_UNREACHABLE that fired: {stale:?}");
@@ -2503,7 +2875,10 @@ fn audit_main() {
         let _ = writeln!(full, "known unreachable: {r}: {why}");
     }
     if !stats.unchecked.is_empty() {
-        let _ = writeln!(full, "\n== unchecked cases (warning: simulator panicked and bit-blast over budget) ==");
+        let _ = writeln!(
+            full,
+            "\n== unchecked cases (warning: simulator panicked and bit-blast over budget) =="
+        );
         for u in stats.unchecked.iter().take(40) {
             let _ = writeln!(full, "  {u}");
         }
@@ -2518,17 +2893,26 @@ fn audit_main() {
         }
     }
     if !report.is_empty() {
-        let _ = writeln!(full, "\n== findings (minimal representative per group; reproducers in {}) ==\n{report}", dir.display());
+        let _ = writeln!(
+            full,
+            "\n== findings (minimal representative per group; reproducers in {}) ==\n{report}",
+            dir.display()
+        );
     }
     println!("{full}");
     std::fs::write(dir.join("report.txt"), &full).unwrap();
 
     let mut problems = Vec::new();
     if failing_groups > 0 {
-        problems.push(format!("{failing_groups} failing finding group(s): {per_class:?}"));
+        problems.push(format!(
+            "{failing_groups} failing finding group(s): {per_class:?}"
+        ));
     }
     if !missing.is_empty() {
-        problems.push(format!("{} rule(s) with 0 hits: {missing:?}", missing.len()));
+        problems.push(format!(
+            "{} rule(s) with 0 hits: {missing:?}",
+            missing.len()
+        ));
     }
     if !stale.is_empty() {
         problems.push(format!("stale KNOWN_UNREACHABLE entries: {stale:?}"));
@@ -2539,7 +2923,12 @@ fn audit_main() {
     if !gen_panics.is_empty() {
         problems.push(format!("{} generator panic(s)", gen_panics.len()));
     }
-    assert!(problems.is_empty(), "rewrite audit failed: {}\nsee {}", problems.join("; "), dir.join("report.txt").display());
+    assert!(
+        problems.is_empty(),
+        "rewrite audit failed: {}\nsee {}",
+        problems.join("; "),
+        dir.join("report.txt").display()
+    );
 }
 
 /// `RULES` must list exactly the `impl RewriteRule for <Name>` blocks of simplify.rs, in order,
@@ -2553,11 +2942,20 @@ fn rule_list_in_sync() {
         .map(|r| r.trim_end_matches('{').trim())
         .filter(|n| *n != "RewritePipeline")
         .collect();
-    assert_eq!(in_src, RULES, "RULES is out of sync with src/fol/simplify.rs");
+    assert_eq!(
+        in_src, RULES,
+        "RULES is out of sync with src/fol/simplify.rs"
+    );
     let targeted: Vec<&str> = TARGETED.iter().map(|(n, _)| *n).collect();
-    assert_eq!(targeted, RULES, "TARGETED generators are out of sync with RULES");
+    assert_eq!(
+        targeted, RULES,
+        "TARGETED generators are out of sync with RULES"
+    );
     for (n, _) in KNOWN_UNREACHABLE {
-        assert!(RULES.contains(n), "KNOWN_UNREACHABLE names an unknown rule {n}");
+        assert!(
+            RULES.contains(n),
+            "KNOWN_UNREACHABLE names an unknown rule {n}"
+        );
     }
 }
 
@@ -2572,13 +2970,27 @@ fn btor2_writer_smoke() {
     let text = btor2::neq_bad_model(&orig, &simp, "smoke", &[x, y, a]);
     let path = out_dir().join("smoke.btor");
     std::fs::write(&path, &text).unwrap();
-    let catbtor = std::env::var("CATBTOR").unwrap_or_else(|_| "/home/ubuntu/ri/work/oss-toolchain/ri-solve/.prefix/bin/catbtor".into());
+    let catbtor = std::env::var("CATBTOR").unwrap_or_else(|_| {
+        "/home/ubuntu/ri/work/oss-toolchain/ri-solve/.prefix/bin/catbtor".into()
+    });
     if !std::path::Path::new(&catbtor).exists() {
-        eprintln!("catbtor not found at {catbtor}; wrote {} only", path.display());
+        eprintln!(
+            "catbtor not found at {catbtor}; wrote {} only",
+            path.display()
+        );
         return;
     }
-    let out = std::process::Command::new(&catbtor).arg(&path).current_dir(out_dir()).output().unwrap();
-    assert!(out.status.success(), "catbtor rejected the model:\n{}\n{}", String::from_utf8_lossy(&out.stderr), text);
+    let out = std::process::Command::new(&catbtor)
+        .arg(&path)
+        .current_dir(out_dir())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "catbtor rejected the model:\n{}\n{}",
+        String::from_utf8_lossy(&out.stderr),
+        text
+    );
 }
 
 /// Cost probe: all-constant bit-blast of one wide divider (`cargo test -- --ignored bench_`).
@@ -2594,6 +3006,11 @@ fn bench_const_divider_bitblast() {
         let t0 = Instant::now();
         let bb = t.bitblast(&mut GHashMap::new());
         let all_const = bb.iter().all(|b| b.is_const());
-        eprintln!("w={w}: bitblast {:?}, {} bits, all const: {all_const}, terms in manager: {}", t0.elapsed(), bb.len(), term_mgr().len());
+        eprintln!(
+            "w={w}: bitblast {:?}, {} bits, all const: {all_const}, terms in manager: {}",
+            t0.elapsed(),
+            bb.len(),
+            term_mgr().len()
+        );
     }
 }

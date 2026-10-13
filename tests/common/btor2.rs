@@ -81,7 +81,10 @@ impl Btor2Writer {
     }
 
     fn bits_msb_first(c: &BitVec) -> String {
-        (0..c.len()).rev().map(|i| if c.get(i) { '1' } else { '0' }).collect()
+        (0..c.len())
+            .rev()
+            .map(|i| if c.get(i) { '1' } else { '0' })
+            .collect()
     }
 
     fn op_name(op: FolOp) -> &'static str {
