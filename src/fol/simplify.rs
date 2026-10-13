@@ -64,7 +64,12 @@ pub mod audit {
         static E: OnceLock<Env> = OnceLock::new();
         E.get_or_init(|| Env {
             disabled: std::env::var("LOGICRS_DISABLE_RULES")
-                .map(|v| v.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect())
+                .map(|v| {
+                    v.split(',')
+                        .filter(|s| !s.is_empty())
+                        .map(str::to_string)
+                        .collect()
+                })
                 .unwrap_or_default(),
             trace: std::env::var("LOGICRS_TRACE_RULES").is_ok(),
         })
@@ -83,7 +88,8 @@ pub mod audit {
     /// Disable exactly these rules on the current thread (overrides `LOGICRS_DISABLE_RULES`).
     /// `None` restores the environment setting.
     pub fn set_disabled(rules: Option<&[&str]>) {
-        DISABLED.with(|d| *d.borrow_mut() = rules.map(|r| r.iter().map(|s| s.to_string()).collect()));
+        DISABLED
+            .with(|d| *d.borrow_mut() = rules.map(|r| r.iter().map(|s| s.to_string()).collect()));
     }
 
     pub(super) fn is_disabled(name: &str) -> bool {
