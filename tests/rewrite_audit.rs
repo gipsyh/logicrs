@@ -2970,10 +2970,12 @@ fn btor2_writer_smoke() {
     let text = btor2::neq_bad_model(&orig, &simp, "smoke", &[x, y, a]);
     let path = out_dir().join("smoke.btor");
     std::fs::write(&path, &text).unwrap();
-    let catbtor = std::env::var("CATBTOR").unwrap_or_else(|_| {
-        "/home/ubuntu/ri/work/oss-toolchain/ri-solve/.prefix/bin/catbtor".into()
-    });
-    if !std::path::Path::new(&catbtor).exists() {
+    let catbtor = std::env::var("CATBTOR").unwrap_or_else(|_| "catbtor".into());
+    let on_path = || {
+        std::env::var_os("PATH")
+            .is_some_and(|p| std::env::split_paths(&p).any(|d| d.join(&catbtor).is_file()))
+    };
+    if !std::path::Path::new(&catbtor).exists() && !on_path() {
         eprintln!(
             "catbtor not found at {catbtor}; wrote {} only",
             path.display()
