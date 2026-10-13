@@ -96,14 +96,18 @@ fn collect_assoc_terms(op: FolOp, term: &Term, out: &mut Vec<Term>) {
     out.push(term.clone());
 }
 
-fn eval_const_op(op: FolOp, terms: &[Term]) -> Term {
+/// Fold `op` over constant operands through the simulator. Returns `None` when the simulated
+/// value still contains X, so that the term stays unfolded instead of asserting.
+fn eval_const_op(op: FolOp, terms: &[Term]) -> TermResult {
     let vals: Vec<Value> = terms
         .iter()
         .map(|t| Value::Bv(t.try_bv_const().unwrap().clone().into()))
         .collect();
-    let result = op.simulate(&vals);
-    let lbv = result.into_bv().unwrap();
-    Term::bv_const(BitVec::from(lbv))
+    let lbv = op.simulate(&vals).into_bv().ok()?;
+    if lbv.any_x() {
+        return None;
+    }
+    Some(Term::bv_const(BitVec::from(lbv)))
 }
 
 fn fold_assoc_const_terms(op: FolOp, terms: &[Term]) -> TermResult {
@@ -134,10 +138,11 @@ fn fold_assoc_const_terms(op: FolOp, terms: &[Term]) -> TermResult {
         return None;
     }
 
-    let folded_const = const_terms
-        .into_iter()
-        .reduce(|acc, term| eval_const_op(op, &[acc, term]))
-        .unwrap();
+    let mut const_terms = const_terms.into_iter();
+    let mut folded_const = const_terms.next().unwrap();
+    for term in const_terms {
+        folded_const = eval_const_op(op, &[folded_const, term])?;
+    }
     other_terms.push(folded_const);
     other_terms.sort_by_key(|t| t.id());
 
@@ -2381,7 +2386,7 @@ impl FolOp {
     pub fn simplify(self, ctx: &SimplifyCtx, terms: &[Term]) -> TermResult {
         // Constant propagation
         if terms.iter().all(|t| t.is_const()) {
-            return Some(eval_const_op(self, terms));
+            return eval_const_op(self, terms);
         }
 
         if ctx.level.at_least(OptLevel::O1)
