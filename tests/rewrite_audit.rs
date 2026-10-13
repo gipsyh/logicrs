@@ -2127,7 +2127,15 @@ fn check_case(
 
     // 4. bit-level oracle
     let cost = bitblast_cost(orig) + changed.iter().map(|s| bitblast_cost(&s.term)).sum::<usize>();
-    let budget = if all_const || !sim_ok { cfg.bb_budget * 10 } else { cfg.bb_budget };
+    // all-constant terms fold gate by gate during bit-blasting (0.5 s for a 140-bit divider in
+    // debug), so the bit-level oracle always runs for them
+    let budget = if all_const {
+        usize::MAX
+    } else if !sim_ok {
+        cfg.bb_budget * 10
+    } else {
+        cfg.bb_budget
+    };
     if cost > budget {
         if !sim_ok {
             stats.unchecked.push(format!("{} (bit-blast cost {cost})", case.name));
@@ -2393,8 +2401,14 @@ fn audit_main() {
     }
     let groups = group(shrunk);
 
-    // export reproducers and render, by class
+    // export reproducers and render, by class (stale reproducers of an earlier run are removed)
     let dir = out_dir();
+    for e in std::fs::read_dir(&dir).unwrap().flatten() {
+        let p = e.path();
+        if p.extension().is_some_and(|x| x == "btor") && p.file_stem().is_some_and(|n| n.to_string_lossy().chars().all(|c| c.is_ascii_digit())) {
+            let _ = std::fs::remove_file(p);
+        }
+    }
     let mut report = String::new();
     let mut per_class: BTreeMap<&'static str, usize> = BTreeMap::new();
     let mut n = 0;
@@ -2565,4 +2579,21 @@ fn btor2_writer_smoke() {
     }
     let out = std::process::Command::new(&catbtor).arg(&path).current_dir(out_dir()).output().unwrap();
     assert!(out.status.success(), "catbtor rejected the model:\n{}\n{}", String::from_utf8_lossy(&out.stderr), text);
+}
+
+/// Cost probe: all-constant bit-blast of one wide divider (`cargo test -- --ignored bench_`).
+#[test]
+#[ignore]
+fn bench_const_divider_bitblast() {
+    for w in [64usize, 129, 140] {
+        let a = Term::bv_const(BitVec::ones(w));
+        let mut b = BitVec::zero(w);
+        b.set(w - 1, true);
+        b.set(3, true);
+        let t = r2(Udiv, &a, &Term::bv_const(b));
+        let t0 = Instant::now();
+        let bb = t.bitblast(&mut GHashMap::new());
+        let all_const = bb.iter().all(|b| b.is_const());
+        eprintln!("w={w}: bitblast {:?}, {} bits, all const: {all_const}, terms in manager: {}", t0.elapsed(), bb.len(), term_mgr().len());
+    }
 }
