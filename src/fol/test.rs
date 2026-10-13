@@ -692,3 +692,443 @@ fn test_simplify_eq_and_const_contradiction() {
         Term::bool_const(false)
     );
 }
+
+/// Agreement of the simulator, the bit-blaster and an independent reference for the shift,
+/// rotate and division operators on constant operands, including the widths where a `usize` /
+/// `u128` intermediate used to overflow (64, 128) and division by zero.
+mod const_arith {
+    use super::*;
+    use crate::fol::TermVec;
+    use FolOp::*;
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+    const OPS: [FolOp; 10] = [Sll, Srl, Sra, Rol, Ror, Udiv, Urem, Sdiv, Srem, Smod];
+
+    fn bv_from_fn(w: usize, f: impl FnMut(usize) -> bool) -> BitVec {
+        (0..w).map(f).collect()
+    }
+
+    fn bv_from_u128(w: usize, v: u128) -> BitVec {
+        bv_from_fn(w, |i| i < 128 && (v >> i) & 1 == 1)
+    }
+
+    fn bv_to_u128(x: &BitVec) -> u128 {
+        assert!(x.len() <= 128);
+        x.iter()
+            .enumerate()
+            .fold(0, |acc, (i, b)| acc | ((b as u128) << i))
+    }
+
+    fn bv_to_i128(x: &BitVec) -> i128 {
+        let w = x.len();
+        let v = bv_to_u128(x);
+        if w < 128 && x.sign_bit() {
+            (v | (u128::MAX << w)) as i128
+        } else {
+            v as i128
+        }
+    }
+
+    fn ref_neg(x: &BitVec) -> BitVec {
+        let mut res = BitVec::zero(x.len());
+        let mut carry = true;
+        for i in 0..x.len() {
+            let b = !x.get(i);
+            res.set(i, b ^ carry);
+            carry &= b;
+        }
+        res
+    }
+
+    fn ref_abs(x: &BitVec) -> (BitVec, bool) {
+        if x.sign_bit() {
+            (ref_neg(x), true)
+        } else {
+            (x.clone(), false)
+        }
+    }
+
+    fn ref_ult(x: &BitVec, y: &BitVec) -> bool {
+        for i in (0..x.len()).rev() {
+            if x.get(i) != y.get(i) {
+                return y.get(i);
+            }
+        }
+        false
+    }
+
+    /// Native reference for widths <= 128 (SMT-LIB semantics, division by zero included).
+    fn reference_native(op: FolOp, x: &BitVec, y: &BitVec) -> BitVec {
+        let w = x.len();
+        let (xu, yu) = (bv_to_u128(x), bv_to_u128(y));
+        let (xs, ys) = (bv_to_i128(x), bv_to_i128(y));
+        let mask = bv_to_u128(&BitVec::ones(w));
+        let ones = bv_from_u128(w, mask);
+        let shl = |v: u128, s: u128| if s >= w as u128 { 0 } else { v << s };
+        let shr = |v: u128, s: u128| if s >= w as u128 { 0 } else { v >> s };
+        let rot = yu % w as u128;
+        match op {
+            Sll => bv_from_u128(w, shl(xu, yu)),
+            Srl => bv_from_u128(w, shr(xu, yu)),
+            Sra => {
+                let fill = if x.sign_bit() {
+                    mask & !shr(mask, yu)
+                } else {
+                    0
+                };
+                bv_from_u128(w, shr(xu, yu) | fill)
+            }
+            Rol => bv_from_u128(w, shl(xu, rot) | shr(xu, (w as u128 - rot) % w as u128)),
+            Ror => bv_from_u128(w, shr(xu, rot) | shl(xu, (w as u128 - rot) % w as u128)),
+            Udiv if yu == 0 => ones,
+            Udiv => bv_from_u128(w, xu / yu),
+            Urem if yu == 0 => x.clone(),
+            Urem => bv_from_u128(w, xu % yu),
+            Sdiv if ys == 0 => {
+                if xs < 0 {
+                    bv_from_u128(w, 1)
+                } else {
+                    ones
+                }
+            }
+            Sdiv => bv_from_u128(w, xs.wrapping_div(ys) as u128),
+            Srem if ys == 0 => x.clone(),
+            Srem => bv_from_u128(w, xs.wrapping_rem(ys) as u128),
+            Smod if ys == 0 => x.clone(),
+            Smod => {
+                let r = xs.wrapping_rem(ys);
+                let r = if r != 0 && (r < 0) != (ys < 0) {
+                    r.wrapping_add(ys)
+                } else {
+                    r
+                };
+                bv_from_u128(w, r as u128)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Reference for the shift and rotate operators at any width, by moving bits.
+    fn reference_shift(op: FolOp, x: &BitVec, y: &BitVec) -> BitVec {
+        let w = x.len();
+        // shift amount saturated at w; a set bit at index >= 64 is always >= w
+        let shift = y
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| *b)
+            .map(|(i, _)| if i >= 64 { w } else { (1usize << i).min(w) })
+            .fold(0usize, |acc, v| (acc + v).min(w));
+        // rotation amount modulo w: bit i contributes 2^i mod w
+        let mut pow = 1 % w;
+        let mut rot = 0;
+        for b in y.iter() {
+            if b {
+                rot = (rot + pow) % w;
+            }
+            pow = (pow * 2) % w;
+        }
+        match op {
+            Sll => bv_from_fn(w, |i| i >= shift && x.get(i - shift)),
+            Srl => bv_from_fn(w, |i| i + shift < w && x.get(i + shift)),
+            Sra => bv_from_fn(w, |i| {
+                if i + shift < w {
+                    x.get(i + shift)
+                } else {
+                    x.sign_bit()
+                }
+            }),
+            Rol => bv_from_fn(w, |i| x.get((i + w - rot) % w)),
+            Ror => bv_from_fn(w, |i| x.get((i + rot) % w)),
+            _ => unreachable!(),
+        }
+    }
+
+    fn words(x: &BitVec) -> Vec<u64> {
+        let mut w = vec![0u64; x.len().div_ceil(64)];
+        for (i, b) in x.iter().enumerate() {
+            w[i / 64] |= (b as u64) << (i % 64);
+        }
+        w
+    }
+
+    /// `q * y + r` on 64-bit limbs without truncation (2n + 1 words).
+    fn ref_mul_add(q: &BitVec, y: &BitVec, r: &BitVec) -> Vec<u64> {
+        let (q, y, r) = (words(q), words(y), words(r));
+        let n = q.len();
+        let mut acc = vec![0u64; 2 * n + 1];
+        let add_at = |acc: &mut Vec<u64>, mut k: usize, mut v: u128| {
+            while v != 0 {
+                let t = acc[k] as u128 + v;
+                acc[k] = t as u64;
+                v = t >> 64;
+                k += 1;
+            }
+        };
+        for (i, &qi) in q.iter().enumerate() {
+            for (j, &yj) in y.iter().enumerate() {
+                add_at(&mut acc, i + j, qi as u128 * yj as u128);
+            }
+        }
+        for (k, &rk) in r.iter().enumerate() {
+            add_at(&mut acc, k, rk as u128);
+        }
+        acc
+    }
+
+    /// Oracle for unsigned division at any width: `x = q * y + r` without truncation and
+    /// `r < y`, or `(q, r) = (ones, x)` for `y = 0`. Euclidean division is unique, so this is a
+    /// complete check.
+    fn assert_udivrem(x: &BitVec, y: &BitVec, q: &BitVec, r: &BitVec) {
+        if y.is_zero() {
+            assert!(
+                q.is_ones() && r == x,
+                "udiv/urem by zero: x={x:b} q={q:b} r={r:b}"
+            );
+            return;
+        }
+        assert!(
+            ref_ult(r, y),
+            "remainder not below divisor: x={x:b} y={y:b} r={r:b}"
+        );
+        let mut xw = words(x);
+        xw.resize(2 * xw.len() + 1, 0);
+        assert_eq!(
+            ref_mul_add(q, y, r),
+            xw,
+            "q * y + r != x: x={x:b} y={y:b} q={q:b} r={r:b}"
+        );
+    }
+
+    /// Reference for the division operators at any width: the unsigned quotient and remainder of
+    /// the magnitudes are taken from the simulator and checked with `assert_udivrem`; the signed
+    /// results follow the SMT-LIB definitions of bvsdiv, bvsrem and bvsmod.
+    fn reference_div(op: FolOp, x: &BitVec, y: &BitVec) -> BitVec {
+        let signed = matches!(op, Sdiv | Srem | Smod);
+        let (ax, nx) = if signed {
+            ref_abs(x)
+        } else {
+            (x.clone(), false)
+        };
+        let (ay, ny) = if signed {
+            ref_abs(y)
+        } else {
+            (y.clone(), false)
+        };
+        let sim = |op: FolOp, a: &BitVec, b: &BitVec| {
+            let v = op.simulate(&[Value::Bv(a.clone().into()), Value::Bv(b.clone().into())]);
+            BitVec::from(v.into_bv().unwrap())
+        };
+        let (q, r) = (sim(Udiv, &ax, &ay), sim(Urem, &ax, &ay));
+        assert_udivrem(&ax, &ay, &q, &r);
+        let add = |a: &BitVec, b: &BitVec| sim(Add, a, b);
+        match op {
+            Udiv => q,
+            Urem => r,
+            Sdiv if nx != ny => ref_neg(&q),
+            Sdiv => q,
+            Srem if nx => ref_neg(&r),
+            Srem => r,
+            Smod if r.is_zero() => r,
+            Smod => match (nx, ny) {
+                (false, false) => r,
+                (true, false) => add(&ref_neg(&r), y),
+                (false, true) => add(&r, y),
+                (true, true) => ref_neg(&r),
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    fn reference(op: FolOp, x: &BitVec, y: &BitVec) -> BitVec {
+        let generic = match op {
+            Sll | Srl | Sra | Rol | Ror => reference_shift(op, x, y),
+            _ => reference_div(op, x, y),
+        };
+        if x.len() <= 128 {
+            assert_eq!(
+                generic,
+                reference_native(op, x, y),
+                "{op:?} references disagree: x={x:b} y={y:b}"
+            );
+        }
+        generic
+    }
+
+    fn simulate(op: FolOp, x: &BitVec, y: &BitVec) -> BitVec {
+        let v = op.simulate(&[Value::Bv(x.clone().into()), Value::Bv(y.clone().into())]);
+        let v = v.into_bv().unwrap();
+        assert!(
+            !v.any_x(),
+            "{op:?} simulated X on constants: x={x:b} y={y:b} -> {v}"
+        );
+        v.into()
+    }
+
+    /// Bit-blast on constant bits; every gate folds, so the result is a constant.
+    fn bitblast_const(op: FolOp, x: &BitVec, y: &BitVec) -> BitVec {
+        let xb: TermVec = x.iter().map(Term::bool_const).collect();
+        let yb: TermVec = y.iter().map(Term::bool_const).collect();
+        op.bitblast(&[xb, yb])
+            .iter()
+            .map(|t| {
+                t.try_bv_const()
+                    .expect("bitblast of constants did not fold")
+                    .get(0)
+            })
+            .collect()
+    }
+
+    /// Bit-blasted circuit over variable operands, evaluated by simulation of the boolean terms.
+    struct Circuit {
+        x: TermVec,
+        y: TermVec,
+        out: TermVec,
+    }
+
+    impl Circuit {
+        fn new(op: FolOp, w: usize) -> Self {
+            let x = Term::new_var(Sort::Bv(w));
+            let y = Term::new_var(Sort::Bv(w));
+            let t = Term::new_op(op, [&x, &y]);
+            let mut map = GHashMap::new();
+            let out = t.bitblast(&mut map);
+            Self {
+                x: x.bitblast(&mut map),
+                y: y.bitblast(&mut map),
+                out,
+            }
+        }
+
+        fn eval(&self, x: &BitVec, y: &BitVec) -> BitVec {
+            let mut val = GHashMap::new();
+            for (t, b) in self
+                .x
+                .iter()
+                .zip(x.iter())
+                .chain(self.y.iter().zip(y.iter()))
+            {
+                val.insert(t.clone(), Value::Bv(BitVec::from(&[b]).into()));
+            }
+            self.out
+                .iter()
+                .map(|t| {
+                    let v = t.simulate(&mut val);
+                    let v = v.as_bv().unwrap();
+                    assert!(!v.any_x());
+                    v.get(0).is_true()
+                })
+                .collect()
+        }
+    }
+
+    /// `Term::new_op` on two constants must fold to the reference constant, and the fold must be
+    /// stable under `simplify_with_ctx` at O3.
+    fn assert_simplify_folds(op: FolOp, x: &BitVec, y: &BitVec, expected: &BitVec) {
+        let t = Term::new_op(op, [Term::bv_const(x.clone()), Term::bv_const(y.clone())]);
+        assert_eq!(
+            t.try_bv_const(),
+            Some(expected),
+            "{op:?} fold: x={x:b} y={y:b}"
+        );
+        let ctx = SimplifyCtx::new(OptLevel::O3);
+        let mut map = GHashMap::new();
+        assert_eq!(
+            t.simplify_with_ctx(&ctx, &mut map),
+            Term::bv_const(expected.clone())
+        );
+    }
+
+    fn check(op: FolOp, x: &BitVec, y: &BitVec, blast: bool, circuit: Option<&Circuit>) {
+        let expected = reference(op, x, y);
+        assert_eq!(
+            simulate(op, x, y),
+            expected,
+            "{op:?} simulate: x={x:b} y={y:b}"
+        );
+        assert_simplify_folds(op, x, y, &expected);
+        if blast {
+            let got = match circuit {
+                Some(c) => c.eval(x, y),
+                None => bitblast_const(op, x, y),
+            };
+            assert_eq!(got, expected, "{op:?} bitblast: x={x:b} y={y:b}");
+        }
+    }
+
+    #[test]
+    fn exhaustive_small_widths() {
+        for w in 1..=5 {
+            for op in OPS {
+                let circuit = Circuit::new(op, w);
+                for xv in 0..(1u128 << w) {
+                    for yv in 0..(1u128 << w) {
+                        check(
+                            op,
+                            &bv_from_u128(w, xv),
+                            &bv_from_u128(w, yv),
+                            true,
+                            Some(&circuit),
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    fn random_bv(rng: &mut StdRng, w: usize) -> BitVec {
+        bv_from_fn(w, |_| rng.random::<bool>())
+    }
+
+    /// Boundary patterns: zero, one, all ones, signed min and max, and a single set bit at the
+    /// indices where a `usize`, `u128` or `i128` intermediate overflows.
+    fn patterns(w: usize) -> Vec<BitVec> {
+        let mut v = vec![
+            BitVec::zero(w),
+            BitVec::one(w),
+            BitVec::ones(w),
+            bv_from_fn(w, |i| i == w - 1),
+            bv_from_fn(w, |i| i != w - 1),
+        ];
+        for k in [63, 64, 127, 128] {
+            if k < w - 1 {
+                v.push(bv_from_fn(w, |i| i == k));
+            }
+        }
+        v
+    }
+
+    /// Every operand pair goes through simulate, reference and the constant fold. The bit-blast
+    /// cross-check runs with the last (random) operand as `x` for the shifts and rotations, and
+    /// on a single point for the dividers, whose bit-blast costs about a second at width 200 in
+    /// a debug build.
+    #[test]
+    fn random_wide_widths() {
+        let mut rng = StdRng::seed_from_u64(0x5eed);
+        for w in [63, 64, 65, 70, 100, 127, 128, 129, 140, 200] {
+            let mut vals = patterns(w);
+            vals.extend((0..2).map(|_| random_bv(&mut rng, w)));
+            let last = vals.len() - 1;
+            for op in OPS {
+                let shift = matches!(op, Sll | Srl | Sra);
+                let rotate = matches!(op, Rol | Ror);
+                // the rotation circuit is quadratic in the width: evaluate it at the widths that
+                // used to abort in the bit-blaster
+                let bb1 = rotate && matches!(w, 65 | 70 | 100 | 129);
+                let circuit = (shift || bb1).then(|| Circuit::new(op, w));
+                for (i, x) in vals.iter().enumerate() {
+                    for (j, y) in vals.iter().enumerate() {
+                        let blast = i == last
+                            && if shift || bb1 {
+                                true
+                            } else if rotate {
+                                j == last
+                            } else {
+                                w == 65 && j == 0
+                            };
+                        check(op, x, y, blast, circuit.as_ref());
+                    }
+                }
+            }
+        }
+    }
+}
