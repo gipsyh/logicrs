@@ -33,7 +33,72 @@ trait RewriteRule {
         OptLevel::O0
     }
 
+    fn name(&self) -> &'static str {
+        std::any::type_name::<Self>().rsplit("::").next().unwrap()
+    }
+
     fn apply(&self, terms: &[Term]) -> TermResult;
+}
+
+/// Rule tracing and selective disabling, used by the rewrite-rule audit harness.
+///
+/// `LOGICRS_DISABLE_RULES=Name,Name` skips the named rules; `LOGICRS_TRACE_RULES=1` prints every
+/// rule hit to stderr. `audit::fired()` returns the names of the rules that fired on the current
+/// thread since the last `audit::reset()`, so a test can measure which rules a term exercised.
+pub mod audit {
+    use std::cell::RefCell;
+    use std::collections::HashSet;
+    use std::sync::OnceLock;
+
+    thread_local! {
+        static FIRED: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+        static DISABLED: RefCell<Option<HashSet<String>>> = const { RefCell::new(None) };
+    }
+
+    struct Env {
+        disabled: HashSet<String>,
+        trace: bool,
+    }
+
+    fn env() -> &'static Env {
+        static E: OnceLock<Env> = OnceLock::new();
+        E.get_or_init(|| Env {
+            disabled: std::env::var("LOGICRS_DISABLE_RULES")
+                .map(|v| v.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect())
+                .unwrap_or_default(),
+            trace: std::env::var("LOGICRS_TRACE_RULES").is_ok(),
+        })
+    }
+
+    /// Clear the per-thread fired-rule log.
+    pub fn reset() {
+        FIRED.with(|f| f.borrow_mut().clear());
+    }
+
+    /// Names of the rules that fired on this thread since the last `reset()`, in order.
+    pub fn fired() -> Vec<&'static str> {
+        FIRED.with(|f| f.borrow().clone())
+    }
+
+    /// Disable exactly these rules on the current thread (overrides `LOGICRS_DISABLE_RULES`).
+    /// `None` restores the environment setting.
+    pub fn set_disabled(rules: Option<&[&str]>) {
+        DISABLED.with(|d| *d.borrow_mut() = rules.map(|r| r.iter().map(|s| s.to_string()).collect()));
+    }
+
+    pub(super) fn is_disabled(name: &str) -> bool {
+        DISABLED.with(|d| match &*d.borrow() {
+            Some(set) => set.contains(name),
+            None => env().disabled.contains(name),
+        })
+    }
+
+    pub(super) fn hit(name: &'static str, terms: &[super::Term], res: &super::Term) {
+        FIRED.with(|f| f.borrow_mut().push(name));
+        if env().trace {
+            eprintln!("[logicrs rule] {name}: {terms:?} -> {res:?}");
+        }
+    }
 }
 
 struct RewritePipeline {
@@ -65,7 +130,12 @@ impl RewriteRule for RewritePipeline {
             if !self.level.at_least(rule.opt_level()) {
                 continue;
             }
+            let name = rule.name();
+            if audit::is_disabled(name) {
+                continue;
+            }
             if let Some(res) = rule.apply(terms) {
+                audit::hit(name, terms, &res);
                 return Some(res);
             }
         }
