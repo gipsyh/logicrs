@@ -368,280 +368,157 @@ pub fn neg_simulate(terms: &[Value]) -> Value {
     Value::Bv(res)
 }
 
-pub fn udiv_simulate(terms: &[Value]) -> Value {
+/// Bits of `x` as a `BitVec`, or `None` if any bit is X.
+fn known_bits(x: &LboolVec) -> Option<BitVec> {
+    if x.any_x() { None } else { Some(x.into()) }
+}
+
+/// `x + y` modulo 2^width.
+fn bv_add(x: &BitVec, y: &BitVec) -> BitVec {
+    let mut res = BitVec::zero(x.len());
+    let mut c = false;
+    for i in 0..x.len() {
+        let (a, b) = (x.get(i), y.get(i));
+        res.set(i, a ^ b ^ c);
+        c = (a & b) | (a & c) | (b & c);
+    }
+    res
+}
+
+/// `-x` modulo 2^width.
+fn bv_neg(x: &BitVec) -> BitVec {
+    bv_add(&!x, &BitVec::one(x.len()))
+}
+
+/// Bits of `x` packed into 64-bit words, least significant word first.
+fn to_words(x: &BitVec) -> Vec<u64> {
+    let mut words = vec![0u64; x.len().div_ceil(64)];
+    for (i, b) in x.iter().enumerate() {
+        if b {
+            words[i / 64] |= 1 << (i % 64);
+        }
+    }
+    words
+}
+
+fn from_words(len: usize, words: &[u64]) -> BitVec {
+    (0..len)
+        .map(|i| (words[i / 64] >> (i % 64)) & 1 == 1)
+        .collect()
+}
+
+/// If `r >= y` then `r -= y` and return true (one restoring-division step on words).
+fn sub_if_ge(r: &mut [u64], y: &[u64]) -> bool {
+    for i in (0..r.len()).rev() {
+        if r[i] != y[i] {
+            if r[i] < y[i] {
+                return false;
+            }
+            break;
+        }
+    }
+    let mut borrow = false;
+    for (ri, yi) in r.iter_mut().zip(y) {
+        let (d, b1) = ri.overflowing_sub(*yi);
+        let (d, b2) = d.overflowing_sub(borrow as u64);
+        *ri = d;
+        borrow = b1 || b2;
+    }
+    true
+}
+
+/// Unsigned restoring long division at any width; returns `(x / y, x % y)`.
+/// Division by zero follows SMT-LIB: `(ones, x)`.
+fn bv_udiv_urem(x: &BitVec, y: &BitVec) -> (BitVec, BitVec) {
+    let width = x.len();
+    if y.is_zero() {
+        return (BitVec::ones(width), x.clone());
+    }
+    let (xw, mut yw) = (to_words(x), to_words(y));
+    let n = xw.len();
+    let mut q = vec![0u64; n];
+    // the remainder needs one extra word for the bit shifted out of the top word
+    let mut r = vec![0u64; n + 1];
+    yw.push(0);
+    for i in (0..width).rev() {
+        for j in (1..=n).rev() {
+            r[j] = (r[j] << 1) | (r[j - 1] >> 63);
+        }
+        r[0] = (r[0] << 1) | ((xw[i / 64] >> (i % 64)) & 1);
+        if sub_if_ge(&mut r, &yw) {
+            q[i / 64] |= 1 << (i % 64);
+        }
+    }
+    (from_words(width, &q), from_words(width, &r))
+}
+
+/// Absolute value of `x` as a two's complement number and whether it was negative.
+fn bv_abs(x: &BitVec) -> (BitVec, bool) {
+    if x.sign_bit() {
+        (bv_neg(x), true)
+    } else {
+        (x.clone(), false)
+    }
+}
+
+/// SMT-LIB `bvsdiv`: unsigned division of the magnitudes, negated when the signs differ.
+fn bv_sdiv(x: &BitVec, y: &BitVec) -> BitVec {
+    let (ax, nx) = bv_abs(x);
+    let (ay, ny) = bv_abs(y);
+    let (q, _) = bv_udiv_urem(&ax, &ay);
+    if nx != ny { bv_neg(&q) } else { q }
+}
+
+/// SMT-LIB `bvsrem`: remainder with the sign of the dividend.
+fn bv_srem(x: &BitVec, y: &BitVec) -> BitVec {
+    let (ax, nx) = bv_abs(x);
+    let (ay, _) = bv_abs(y);
+    let (_, r) = bv_udiv_urem(&ax, &ay);
+    if nx { bv_neg(&r) } else { r }
+}
+
+/// SMT-LIB `bvsmod`: remainder with the sign of the divisor.
+fn bv_smod(x: &BitVec, y: &BitVec) -> BitVec {
+    let (ax, nx) = bv_abs(x);
+    let (ay, ny) = bv_abs(y);
+    let (_, r) = bv_udiv_urem(&ax, &ay);
+    match (nx, ny) {
+        _ if r.is_zero() => r,
+        (false, false) => r,
+        (true, false) => bv_add(&bv_neg(&r), y),
+        (false, true) => bv_add(&r, y),
+        (true, true) => bv_neg(&r),
+    }
+}
+
+/// Apply an exact bit-vector function to two operands; the result is all X if an operand bit is X.
+fn bv_binop_simulate(terms: &[Value], f: impl Fn(&BitVec, &BitVec) -> BitVec) -> Value {
     let x = terms[0].as_bv().unwrap();
     let y = terms[1].as_bv().unwrap();
-    let width = x.len();
-
-    // Check if all bits are known
-    let mut x_val: Option<u128> = Some(0);
-    let mut y_val: Option<u128> = Some(0);
-
-    for (i, bit) in x.iter().enumerate() {
-        if bit.is_none() {
-            x_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = x_val
-        {
-            *v |= 1u128 << i;
-        }
+    match (known_bits(x), known_bits(y)) {
+        (Some(xv), Some(yv)) => Value::Bv(LboolVec::from(f(&xv, &yv))),
+        _ => Value::Bv(LboolVec::from_elem(Lbool::NONE, x.len())),
     }
+}
 
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            y_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = y_val
-        {
-            *v |= 1u128 << i;
-        }
-    }
-
-    match (x_val, y_val) {
-        (Some(xv), Some(yv)) if yv != 0 => {
-            let q = xv / yv;
-            let mut res = LboolVec::from_elem(Lbool::FALSE, width);
-            for i in 0..width {
-                if (q >> i) & 1 == 1 {
-                    res.set(i, Lbool::TRUE);
-                }
-            }
-            Value::Bv(res)
-        }
-        _ => Value::Bv(LboolVec::from_elem(Lbool::NONE, width)),
-    }
+pub fn udiv_simulate(terms: &[Value]) -> Value {
+    bv_binop_simulate(terms, |x, y| bv_udiv_urem(x, y).0)
 }
 
 pub fn urem_simulate(terms: &[Value]) -> Value {
-    let x = terms[0].as_bv().unwrap();
-    let y = terms[1].as_bv().unwrap();
-    let width = x.len();
-
-    let mut x_val: Option<u128> = Some(0);
-    let mut y_val: Option<u128> = Some(0);
-
-    for (i, bit) in x.iter().enumerate() {
-        if bit.is_none() {
-            x_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = x_val
-        {
-            *v |= 1u128 << i;
-        }
-    }
-
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            y_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = y_val
-        {
-            *v |= 1u128 << i;
-        }
-    }
-
-    match (x_val, y_val) {
-        (Some(xv), Some(yv)) if yv != 0 => {
-            let r = xv % yv;
-            let mut res = LboolVec::from_elem(Lbool::FALSE, width);
-            for i in 0..width {
-                if (r >> i) & 1 == 1 {
-                    res.set(i, Lbool::TRUE);
-                }
-            }
-            Value::Bv(res)
-        }
-        _ => Value::Bv(LboolVec::from_elem(Lbool::NONE, width)),
-    }
+    bv_binop_simulate(terms, |x, y| bv_udiv_urem(x, y).1)
 }
 
 pub fn sdiv_simulate(terms: &[Value]) -> Value {
-    let x = terms[0].as_bv().unwrap();
-    let y = terms[1].as_bv().unwrap();
-    let width = x.len();
-
-    let mut x_val: Option<i128> = Some(0);
-    let mut y_val: Option<i128> = Some(0);
-
-    for (i, bit) in x.iter().enumerate() {
-        if bit.is_none() {
-            x_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = x_val
-        {
-            *v |= 1i128 << i;
-        }
-    }
-
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            y_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = y_val
-        {
-            *v |= 1i128 << i;
-        }
-    }
-
-    // Sign extend
-    if let Some(ref mut xv) = x_val
-        && (*xv >> (width - 1)) & 1 == 1
-    {
-        *xv |= !((1i128 << width) - 1);
-    }
-    if let Some(ref mut yv) = y_val
-        && (*yv >> (width - 1)) & 1 == 1
-    {
-        *yv |= !((1i128 << width) - 1);
-    }
-
-    match (x_val, y_val) {
-        (Some(xv), Some(yv)) if yv != 0 => {
-            let q = xv / yv;
-            let mut res = LboolVec::from_elem(Lbool::FALSE, width);
-            for i in 0..width {
-                if (q >> i) & 1 == 1 {
-                    res.set(i, Lbool::TRUE);
-                }
-            }
-            Value::Bv(res)
-        }
-        _ => Value::Bv(LboolVec::from_elem(Lbool::NONE, width)),
-    }
+    bv_binop_simulate(terms, bv_sdiv)
 }
 
 pub fn srem_simulate(terms: &[Value]) -> Value {
-    let x = terms[0].as_bv().unwrap();
-    let y = terms[1].as_bv().unwrap();
-    let width = x.len();
-
-    let mut x_val: Option<i128> = Some(0);
-    let mut y_val: Option<i128> = Some(0);
-
-    for (i, bit) in x.iter().enumerate() {
-        if bit.is_none() {
-            x_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = x_val
-        {
-            *v |= 1i128 << i;
-        }
-    }
-
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            y_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = y_val
-        {
-            *v |= 1i128 << i;
-        }
-    }
-
-    // Sign extend
-    if let Some(ref mut xv) = x_val
-        && (*xv >> (width - 1)) & 1 == 1
-    {
-        *xv |= !((1i128 << width) - 1);
-    }
-    if let Some(ref mut yv) = y_val
-        && (*yv >> (width - 1)) & 1 == 1
-    {
-        *yv |= !((1i128 << width) - 1);
-    }
-
-    match (x_val, y_val) {
-        (Some(xv), Some(yv)) if yv != 0 => {
-            let r = xv % yv;
-            let mut res = LboolVec::from_elem(Lbool::FALSE, width);
-            for i in 0..width {
-                if (r >> i) & 1 == 1 {
-                    res.set(i, Lbool::TRUE);
-                }
-            }
-            Value::Bv(res)
-        }
-        _ => Value::Bv(LboolVec::from_elem(Lbool::NONE, width)),
-    }
+    bv_binop_simulate(terms, bv_srem)
 }
 
 pub fn smod_simulate(terms: &[Value]) -> Value {
-    let x = terms[0].as_bv().unwrap();
-    let y = terms[1].as_bv().unwrap();
-    let width = x.len();
-
-    let mut x_val: Option<i128> = Some(0);
-    let mut y_val: Option<i128> = Some(0);
-
-    for (i, bit) in x.iter().enumerate() {
-        if bit.is_none() {
-            x_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = x_val
-        {
-            *v |= 1i128 << i;
-        }
-    }
-
-    for (i, bit) in y.iter().enumerate() {
-        if bit.is_none() {
-            y_val = None;
-            break;
-        }
-        if bit.is_true()
-            && let Some(ref mut v) = y_val
-        {
-            *v |= 1i128 << i;
-        }
-    }
-
-    // Sign extend
-    if let Some(ref mut xv) = x_val
-        && (*xv >> (width - 1)) & 1 == 1
-    {
-        *xv |= !((1i128 << width) - 1);
-    }
-    if let Some(ref mut yv) = y_val
-        && (*yv >> (width - 1)) & 1 == 1
-    {
-        *yv |= !((1i128 << width) - 1);
-    }
-
-    match (x_val, y_val) {
-        (Some(xv), Some(yv)) if yv != 0 => {
-            // smod: result has same sign as divisor
-            let mut r = xv % yv;
-            if (r < 0 && yv > 0) || (r > 0 && yv < 0) {
-                r += yv;
-            }
-            let mut res = LboolVec::from_elem(Lbool::FALSE, width);
-            for i in 0..width {
-                if (r >> i) & 1 == 1 {
-                    res.set(i, Lbool::TRUE);
-                }
-            }
-            Value::Bv(res)
-        }
-        _ => Value::Bv(LboolVec::from_elem(Lbool::NONE, width)),
-    }
+    bv_binop_simulate(terms, bv_smod)
 }
 
 pub fn read_simulate(terms: &[Value]) -> Value {
