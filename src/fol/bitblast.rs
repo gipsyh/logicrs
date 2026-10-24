@@ -219,70 +219,42 @@ pub(crate) fn sra_bitblast(terms: &[TermVec]) -> TermVec {
     res
 }
 
-pub(crate) fn rol_bitblast(terms: &[TermVec]) -> TermVec {
-    let (x, y) = (&terms[0], &terms[1]);
+/// Barrel rotation: bit `i` of the amount rotates by `2^i mod width`. The step of every stage is
+/// computed by doubling modulo `width`, so no `1 << i` can overflow and every bit of the amount
+/// is honoured for any width (rotation by `y` equals rotation by `y mod width`).
+fn rotate_bitblast(x: &TermVec, y: &TermVec, left: bool) -> TermVec {
     assert_eq!(x.len(), y.len());
     let width = x.len();
     // width = 1: rotation is a no-op
     if width == 1 {
         return x.clone();
     }
-    let stages = match width & (width - 1) {
-        // power of 2 ?
-        0 => (usize::BITS - (width - 1).leading_zeros()) as usize,
-        _ => width,
-    };
-    assert!(stages < usize::BITS as usize);
-
     let mut res = x.clone();
-    for shift_bit in 0..stages {
-        let shift_step = 1 << shift_bit;
-        let shift = &y[shift_bit];
-        let mut next = TermVec::new();
-        for j in 0..width {
-            // wrap-around index for rotate-left
-            let src = (j + width - shift_step % width) % width;
-            if src == j {
-                next.push(res[j].clone());
-            } else {
+    let mut step = 1 % width;
+    for shift in y.iter() {
+        if step != 0 {
+            let mut next = TermVec::new();
+            for j in 0..width {
+                let src = if left {
+                    (j + width - step) % width
+                } else {
+                    (j + step) % width
+                };
                 next.push(Term::new_op(Ite, [shift, &res[src], &res[j]]));
             }
+            res = next;
         }
-        res = next;
+        step = (step * 2) % width;
     }
     res
 }
 
-pub(crate) fn ror_bitblast(terms: &[TermVec]) -> TermVec {
-    let (x, y) = (&terms[0], &terms[1]);
-    assert_eq!(x.len(), y.len());
-    let width = x.len();
-    if width == 1 {
-        return x.clone();
-    }
-    let stages = match width & (width - 1) {
-        // power of 2 ?
-        0 => (usize::BITS - (width - 1).leading_zeros()) as usize,
-        _ => width,
-    };
-    assert!(stages < usize::BITS as usize);
+pub(crate) fn rol_bitblast(terms: &[TermVec]) -> TermVec {
+    rotate_bitblast(&terms[0], &terms[1], true)
+}
 
-    let mut res = x.clone();
-    for shift_bit in 0..stages {
-        let shift_step = 1 << shift_bit;
-        let shift = &y[shift_bit];
-        let mut next = TermVec::new();
-        for j in 0..width {
-            let src = (j + shift_step) % width;
-            if src == j {
-                next.push(res[j].clone());
-            } else {
-                next.push(Term::new_op(Ite, [shift, &res[src], &res[j]]));
-            }
-        }
-        res = next;
-    }
-    res
+pub(crate) fn ror_bitblast(terms: &[TermVec]) -> TermVec {
+    rotate_bitblast(&terms[0], &terms[1], false)
 }
 
 pub(crate) fn ite_bitblast(terms: &[TermVec]) -> TermVec {
